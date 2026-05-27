@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using WallpaperChanger.Services;
 using Timer = System.Timers.Timer;
 
@@ -14,53 +13,10 @@ public class MainContext : ApplicationContext
     private bool isGameMode;
     private LikeDislikeForm? likeDislikeForm;
 
-    // 全局热键相关
-    private const int WM_HOTKEY = 0x0312;
-    private const int HOTKEY_ID = 9001;
-    private const uint MOD_CONTROL = 0x0002;
-    private const uint MOD_SHIFT = 0x0004;
-
-    [DllImport("user32.dll")]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-    [DllImport("user32.dll")]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-    private readonly IntPtr _hwnd; // 用于接收热键消息
-
     public MainContext()
     {
         settings = AppSettings.Load();
         manager = new WallpaperManager();
-
-        // 创建一个隐藏窗口来接收热键消息
-        var dummyForm = new Form()
-        {
-            Width = 0,
-            Height = 0,
-            ShowInTaskbar = false,
-            FormBorderStyle = FormBorderStyle.None,
-            WindowState = FormWindowState.Minimized,
-            Opacity = 0
-        };
-        dummyForm.Load += (s, e) =>
-        {
-            RegisterHotKey(dummyForm.Handle, HOTKEY_ID, MOD_CONTROL | MOD_SHIFT, (uint)Keys.W);
-            dummyForm.Activate(); // 确保有焦点接收消息
-        };
-        dummyForm.FormClosed += (s, e) => UnregisterHotKey(dummyForm.Handle, HOTKEY_ID);
-        // 处理热键消息
-        dummyForm.WndProc += HotKeyWndProc;
-        // 需要重写 WndProc，我们用 lambda 不行，需要继承，简单方法：使用 NativeWindow
-        // 更简单的方法：注册全局热键后，在 MainContext 中用一个隐藏 NativeWindow 监听
-        // 这里改用 NativeWindow
-        var hotKeyWindow = new HotKeyWindow(this);
-        hotKeyWindow.CreateHandle(new CreateParams());
-        _hwnd = hotKeyWindow.Handle;
-
-        // 显示主窗体（隐藏）
-        dummyForm.Show();
-        dummyForm.Hide();
 
         trayIcon = new NotifyIcon()
         {
@@ -84,21 +40,6 @@ public class MainContext : ApplicationContext
         InitializeWallpaper();
     }
 
-    // 接收热键的 NativeWindow
-    private class HotKeyWindow : NativeWindow
-    {
-        private MainContext _ctx;
-        public HotKeyWindow(MainContext ctx) { _ctx = ctx; }
-        protected override void WndProc(ref Message m)
-        {
-            if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HOTKEY_ID)
-            {
-                _ctx.ChangeWallpaper();
-            }
-            base.WndProc(ref m);
-        }
-    }
-
     private void ShowLikeDislikeButtons()
     {
         likeDislikeForm = new LikeDislikeForm();
@@ -109,7 +50,6 @@ public class MainContext : ApplicationContext
 
     private string GetActiveFolder()
     {
-        // 访客模式启用且文件夹有效，则返回访客文件夹
         if (settings.GuestMode && !string.IsNullOrWhiteSpace(settings.GuestFolder) && Directory.Exists(settings.GuestFolder))
             return settings.GuestFolder;
         return settings.WallpaperFolder;
@@ -121,7 +61,7 @@ public class MainContext : ApplicationContext
         if (Directory.Exists(activeFolder))
         {
             manager.LoadFolder(activeFolder);
-            ChangeWallpaper(useTransition: false); // 启动时不做过渡
+            ChangeWallpaper(useTransition: false);
         }
         StartTimers();
     }
@@ -153,12 +93,8 @@ public class MainContext : ApplicationContext
         ChangeWallpaper();
     }
 
-    /// <summary>
-    /// 切换壁纸（支持平滑过渡）
-    /// </summary>
     private void ChangeWallpaper(bool useTransition = true)
     {
-        // 访客模式下不移动文件
         if (!settings.GuestMode)
             manager.MoveCurrentToDefaultIfNotMoved();
 
@@ -187,17 +123,13 @@ public class MainContext : ApplicationContext
 
         if (images.Length == 0) return;
 
-        // 是否启用平滑过渡
         bool doTransition = useTransition && settings.SmoothTransition;
-
         if (doTransition)
         {
-            // 异步执行过渡，避免阻塞界面
             Task.Run(() =>
             {
                 var transition = new TransitionForm(images);
                 transition.ShowDialog();
-                // 过渡结束后直接应用壁纸（过渡窗口内部已设置）
             });
         }
         else
@@ -209,7 +141,7 @@ public class MainContext : ApplicationContext
 
     private void MarkAsLike()
     {
-        if (settings.GuestMode) return; // 访客模式不允许移动
+        if (settings.GuestMode) return;
         string root = settings.WallpaperFolder;
         if (string.IsNullOrEmpty(root)) return;
         string likeFolder = Path.Combine(root, AppSettings.LikeFolderName);
@@ -230,11 +162,10 @@ public class MainContext : ApplicationContext
         var form = new SettingsForm(settings);
         if (form.ShowDialog() == DialogResult.OK)
         {
-            // 设置已保存，重新加载
             settings = AppSettings.Load();
             string activeFolder = GetActiveFolder();
             manager.LoadFolder(activeFolder);
-            ChangeWallpaper(useTransition: false); // 设置更改后立即切换一张新壁纸
+            ChangeWallpaper(useTransition: false);
             StartTimers();
         }
     }
@@ -243,7 +174,6 @@ public class MainContext : ApplicationContext
     {
         timer?.Stop();
         gameCheckTimer?.Dispose();
-        UnregisterHotKey(_hwnd, HOTKEY_ID);
         likeDislikeForm?.Close();
         likeDislikeForm?.Dispose();
         trayIcon.Visible = false;
