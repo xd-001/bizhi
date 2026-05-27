@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace WallpaperChanger.Services;
@@ -35,5 +36,22 @@ public static class GameDetector
 
         return rect.Left <= screenBounds.Left && rect.Top <= screenBounds.Top &&
                rect.Right >= screenBounds.Right && rect.Bottom >= screenBounds.Bottom;
+    }
+
+    /// <summary>
+    /// 检查指定进程是否正在运行
+    /// </summary>
+    public static bool IsProcessRunning(List<string> processNames)
+    {
+        if (processNames == null || processNames.Count == 0) return false;
+        foreach (var name in processNames)
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var procs = Process.GetProcessesByName(name.Trim());
+                if (procs.Length > 0) return true;
+            }
+        }
+        return false;
     }
 }
