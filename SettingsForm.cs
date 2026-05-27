@@ -8,6 +8,7 @@ public partial class SettingsForm : Form
     private TextBox txtFolder = new();
     private NumericUpDown numIntervalSeconds = new();
     private CheckBox chkStartup = new();
+    private TextBox txtGameProcesses = new();   // 新增
     private Button btnBrowse = new();
     private Button btnSave = new();
 
@@ -15,8 +16,8 @@ public partial class SettingsForm : Form
     {
         _settings = settings;
         Text = "壁纸切换器设置";
-        Width = 480;
-        Height = 260;
+        Width = 500;
+        Height = 320;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -39,20 +40,28 @@ public partial class SettingsForm : Form
 
         var lblInterval = new Label { Text = "切换间隔(秒):", Left = 20, Top = 60, Width = 100 };
         numIntervalSeconds = new NumericUpDown { Left = 130, Top = 57, Width = 80 };
-        numIntervalSeconds.Minimum = 15;      // 最短15秒
-        numIntervalSeconds.Maximum = 86400;   // 最长24小时
+        numIntervalSeconds.Minimum = 15;
+        numIntervalSeconds.Maximum = 86400;
         numIntervalSeconds.Value = 600;
         numIntervalSeconds.DecimalPlaces = 0;
 
-        chkStartup = new CheckBox { Text = "开机自动启动", Left = 110, Top = 95, Width = 150 };
+        chkStartup = new CheckBox { Text = "开机自动启动", Left = 20, Top = 95, Width = 150 };
 
-        btnSave = new Button { Text = "保存", Left = 200, Top = 150, Width = 80 };
+        // 新增：游戏进程名
+        var lblGame = new Label { Text = "游戏进程名\n(逗号分隔):", Left = 20, Top = 130, Width = 100 };
+        lblGame.AutoSize = false;
+        lblGame.Height = 35;
+        txtGameProcesses = new TextBox { Left = 130, Top = 135, Width = 280 };
+        txtGameProcesses.PlaceholderText = "例: r5apex,notepad";
+
+        btnSave = new Button { Text = "保存", Left = 200, Top = 190, Width = 80 };
         btnSave.Click += BtnSave_Click;
 
         Controls.AddRange(new Control[] {
             lblFolder, txtFolder, btnBrowse,
             lblInterval, numIntervalSeconds,
             chkStartup,
+            lblGame, txtGameProcesses,
             btnSave
         });
     }
@@ -62,6 +71,7 @@ public partial class SettingsForm : Form
         txtFolder.Text = _settings.WallpaperFolder;
         numIntervalSeconds.Value = _settings.IntervalSeconds;
         chkStartup.Checked = _settings.StartWithWindows;
+        txtGameProcesses.Text = string.Join(",", _settings.GameProcessNames);
     }
 
     private void BtnSave_Click(object? sender, EventArgs e)
@@ -69,6 +79,11 @@ public partial class SettingsForm : Form
         _settings.WallpaperFolder = txtFolder.Text;
         _settings.IntervalSeconds = (int)numIntervalSeconds.Value;
         _settings.StartWithWindows = chkStartup.Checked;
+        _settings.GameProcessNames = txtGameProcesses.Text
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => !string.IsNullOrEmpty(s))
+            .ToList();
         _settings.Save();
 
         // 注册表开机启动
