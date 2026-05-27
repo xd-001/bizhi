@@ -7,9 +7,7 @@ public class WallpaperManager
     private readonly Random _random = new();
     private readonly object _lock = new();
 
-    // 当前正在显示的壁纸路径（可能多显示器）
     private List<string> _currentWallpapers = new();
-    // 记录当前壁纸是否已被用户手动移动过（喜欢/不喜欢），防止重复移动
     private bool _currentMoved = false;
 
     public void LoadFolder(string folder)
@@ -23,7 +21,8 @@ public class WallpaperManager
             }
 
             var extensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" };
-            _images = Directory.GetFiles(folder, "*.*", SearchOption.TopDirectoryOnly)
+            // 修改点：AllDirectories 让子文件夹（默认/喜欢/不喜欢）中的图片也参与随机
+            _images = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories)
                               .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                               .ToList();
             _lastImage = null;
@@ -77,21 +76,15 @@ public class WallpaperManager
         }
     }
 
-    /// <summary>
-    /// 设置当前显示的壁纸列表
-    /// </summary>
     public void SetCurrentWallpapers(string[] paths)
     {
         lock (_lock)
         {
             _currentWallpapers = new List<string>(paths);
-            _currentMoved = false; // 新壁纸，用户未移动
+            _currentMoved = false;
         }
     }
 
-    /// <summary>
-    /// 将当前所有壁纸移动到指定文件夹
-    /// </summary>
     public void MoveCurrentWallpapers(string targetFolder)
     {
         lock (_lock)
@@ -104,14 +97,12 @@ public class WallpaperManager
                 if (File.Exists(file))
                 {
                     string dest = Path.Combine(targetFolder, Path.GetFileName(file));
-                    // 如果目标已存在，加数字后缀避免覆盖
                     if (File.Exists(dest))
                     {
                         dest = Path.Combine(targetFolder,
                             Path.GetFileNameWithoutExtension(file) + "_" + DateTime.Now.Ticks + Path.GetExtension(file));
                     }
                     File.Move(file, dest);
-                    // 从缓存列表中移除
                     _images.Remove(file);
                 }
             }
@@ -120,16 +111,12 @@ public class WallpaperManager
         }
     }
 
-    /// <summary>
-    /// 将当前壁纸移动到默认文件夹（切换壁纸时调用，且用户未手动移动过）
-    /// </summary>
     public void MoveCurrentToDefaultIfNotMoved()
     {
         lock (_lock)
         {
             if (_currentWallpapers.Count == 0 || _currentMoved) return;
 
-            // 获取壁纸根文件夹（从第一张图片路径推断）
             string? root = Path.GetDirectoryName(_currentWallpapers[0]);
             if (root == null) return;
 
