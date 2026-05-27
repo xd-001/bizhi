@@ -11,7 +11,7 @@ public class MainContext : ApplicationContext
     private Timer? timer;
     private System.Threading.Timer? gameCheckTimer;
     private bool isGameMode;
-    private LikeDislikeForm? likeDislikeForm;   // 新增
+    private LikeDislikeForm? likeDislikeForm;
 
     public MainContext()
     {
@@ -36,13 +36,10 @@ public class MainContext : ApplicationContext
 
         trayIcon.DoubleClick += (s, e) => OpenSettings();
 
-        // 启动桌面悬浮按钮
         ShowLikeDislikeButtons();
-
         InitializeWallpaper();
     }
 
-    // 显示桌面右下角按钮
     private void ShowLikeDislikeButtons()
     {
         likeDislikeForm = new LikeDislikeForm();
@@ -90,9 +87,9 @@ public class MainContext : ApplicationContext
 
     private void ChangeWallpaper()
     {
-        // 将当前壁纸移动到“默认”文件夹（如果用户没手动移动过）
         manager.MoveCurrentToDefaultIfNotMoved();
 
+        // 获取显示器数量
         uint monitorCount = 1;
         try
         {
@@ -105,7 +102,19 @@ public class MainContext : ApplicationContext
         }
         catch { }
 
-        var images = manager.GetRandomImages((int)monitorCount);
+        string[] images;
+        if (settings.MultiMonitorSameWallpaper)
+        {
+            // 所有显示器同一张壁纸：只取一张图
+            var img = manager.GetRandomImage();
+            images = img != null ? new string[] { img } : Array.Empty<string>();
+        }
+        else
+        {
+            // 各显示器独立随机：取 monitorCount 张不同图片
+            images = manager.GetRandomImages((int)monitorCount);
+        }
+
         if (images.Length > 0)
         {
             try
