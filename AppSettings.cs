@@ -7,9 +7,9 @@ public class AppSettings
     public string WallpaperFolder { get; set; } = "";
     public int IntervalSeconds { get; set; } = 600;
     public bool StartWithWindows { get; set; } = false;
-    public List<string> GameProcessNames { get; set; } = new();   // 新增
+    public List<string> GameProcessNames { get; set; } = new();
+    public bool MultiMonitorSameWallpaper { get; set; } = false;   // 新增
 
-    // 子文件夹名称（相对于壁纸文件夹）
     public static readonly string DefaultFolderName = "默认";
     public static readonly string LikeFolderName = "喜欢";
     public static readonly string DislikeFolderName = "不喜欢";
