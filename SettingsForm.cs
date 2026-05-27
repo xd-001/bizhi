@@ -8,7 +8,8 @@ public partial class SettingsForm : Form
     private TextBox txtFolder = new();
     private NumericUpDown numIntervalSeconds = new();
     private CheckBox chkStartup = new();
-    private TextBox txtGameProcesses = new();   // 新增
+    private TextBox txtGameProcesses = new();
+    private CheckBox chkSameWallpaper = new();   // 新增
     private Button btnBrowse = new();
     private Button btnSave = new();
 
@@ -17,7 +18,7 @@ public partial class SettingsForm : Form
         _settings = settings;
         Text = "壁纸切换器设置";
         Width = 500;
-        Height = 320;
+        Height = 350;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -47,14 +48,16 @@ public partial class SettingsForm : Form
 
         chkStartup = new CheckBox { Text = "开机自动启动", Left = 20, Top = 95, Width = 150 };
 
-        // 新增：游戏进程名
         var lblGame = new Label { Text = "游戏进程名\n(逗号分隔):", Left = 20, Top = 130, Width = 100 };
         lblGame.AutoSize = false;
         lblGame.Height = 35;
         txtGameProcesses = new TextBox { Left = 130, Top = 135, Width = 280 };
         txtGameProcesses.PlaceholderText = "例: r5apex,notepad";
 
-        btnSave = new Button { Text = "保存", Left = 200, Top = 190, Width = 80 };
+        // 新增：多屏统一壁纸复选框
+        chkSameWallpaper = new CheckBox { Text = "所有显示器使用同一张壁纸", Left = 20, Top = 180, Width = 220 };
+
+        btnSave = new Button { Text = "保存", Left = 200, Top = 230, Width = 80 };
         btnSave.Click += BtnSave_Click;
 
         Controls.AddRange(new Control[] {
@@ -62,6 +65,7 @@ public partial class SettingsForm : Form
             lblInterval, numIntervalSeconds,
             chkStartup,
             lblGame, txtGameProcesses,
+            chkSameWallpaper,
             btnSave
         });
     }
@@ -72,6 +76,7 @@ public partial class SettingsForm : Form
         numIntervalSeconds.Value = _settings.IntervalSeconds;
         chkStartup.Checked = _settings.StartWithWindows;
         txtGameProcesses.Text = string.Join(",", _settings.GameProcessNames);
+        chkSameWallpaper.Checked = _settings.MultiMonitorSameWallpaper;
     }
 
     private void BtnSave_Click(object? sender, EventArgs e)
@@ -84,9 +89,9 @@ public partial class SettingsForm : Form
             .Select(s => s.Trim())
             .Where(s => !string.IsNullOrEmpty(s))
             .ToList();
+        _settings.MultiMonitorSameWallpaper = chkSameWallpaper.Checked;
         _settings.Save();
 
-        // 注册表开机启动
         RegistryKey? rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
         string appName = "WallpaperChanger";
         if (_settings.StartWithWindows)
