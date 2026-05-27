@@ -16,10 +16,12 @@ public class MainContext : ApplicationContext
     {
         settings = AppSettings.Load();
         manager = new WallpaperManager();
+
+        // 托盘图标使用系统默认图标，避免 app.ico 丢失问题
         trayIcon = new NotifyIcon()
         {
-Icon = SystemIcons.Application,
-Text = "壁纸切换器",
+            Icon = SystemIcons.Application,
+            Text = "壁纸切换器",
             Visible = true
         };
 
@@ -48,7 +50,7 @@ Text = "壁纸切换器",
     private void StartTimers()
     {
         timer?.Stop();
-        timer = new Timer(settings.IntervalMinutes * 60 * 1000);
+        timer = new Timer(settings.IntervalSeconds * 1000);
         timer.Elapsed += (s, e) => ChangeWallpaperIfAllowed();
         timer.AutoReset = true;
         timer.Start();
@@ -61,7 +63,7 @@ Text = "壁纸切换器",
             isGameMode = GameDetector.IsFullScreenAppRunning();
             if (wasGameMode && !isGameMode)
             {
-                // 刚刚退出游戏，立刻换一张壁纸
+                // 刚刚退出全屏，立刻更换壁纸
                 ChangeWallpaperIfAllowed();
             }
         }, null, 0, 1500);
@@ -75,12 +77,26 @@ Text = "壁纸切换器",
 
     private void ChangeWallpaper()
     {
-        var img = manager.GetRandomImage();
-        if (img != null)
+        // 获取显示器数量
+        uint monitorCount = 1; // 默认1
+        try
+        {
+            Type? type = Type.GetTypeFromProgID("DesktopWallpaper.Wallpaper");
+            if (type != null)
+            {
+                dynamic wallpaper = Activator.CreateInstance(type)!;
+                monitorCount = wallpaper.GetMonitorDevicePathCount();
+            }
+        }
+        catch { }
+
+        // 获取与显示器数量相同的随机图片
+        var images = manager.GetRandomImages((int)monitorCount);
+        if (images.Length > 0)
         {
             try
             {
-                WallpaperHelper.SetWallpaper(img);
+                WallpaperHelper.SetWallpapers(images);
             }
             catch { }
         }
@@ -94,7 +110,7 @@ Text = "壁纸切换器",
             settings = AppSettings.Load(); // 重新加载
             manager.LoadFolder(settings.WallpaperFolder);
             ChangeWallpaper();
-            StartTimers(); // 重启定时器
+            StartTimers(); // 用新的间隔重启定时器
         }
     }
 
