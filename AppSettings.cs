@@ -5,7 +5,7 @@ namespace WallpaperChanger;
 public class AppSettings
 {
     public string WallpaperFolder { get; set; } = "";
-    public int IntervalMinutes { get; set; } = 10;
+    public int IntervalSeconds { get; set; } = 600; // 默认600秒 = 10分钟
     public bool StartWithWindows { get; set; } = false;
 
     private static readonly string FilePath = Path.Combine(
