@@ -4,6 +4,9 @@ namespace WallpaperChanger.Services;
 
 public static class WallpaperHelper
 {
+    /// <summary>
+    /// 设置多显示器壁纸（无过渡）
+    /// </summary>
     public static void SetWallpapers(string[] imagePaths)
     {
         if (imagePaths.Length == 0) return;
@@ -22,15 +25,12 @@ public static class WallpaperHelper
                     string monitorId = wallpaper.GetMonitorDevicePathAt(i);
                     wallpaper.SetWallpaper(monitorId, path);
                 }
-                return; // 成功，结束
+                return;
             }
         }
-        catch
-        {
-            // 如果 COM 失败，尝试单屏设置
-        }
+        catch { }
 
-        // 回退：设置主显示器壁纸（取第一张）
+        // 回退单屏
         if (imagePaths.Length > 0 && File.Exists(imagePaths[0]))
         {
             const int SPI_SETDESKWALLPAPER = 20;
