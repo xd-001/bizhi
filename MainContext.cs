@@ -18,8 +18,8 @@ public class MainContext : ApplicationContext
         manager = new WallpaperManager();
         trayIcon = new NotifyIcon()
         {
-            Icon = new Icon("app.ico"),
-            Text = "壁纸切换器",
+Icon = SystemIcons.Application,
+Text = "壁纸切换器",
             Visible = true
         };
 
