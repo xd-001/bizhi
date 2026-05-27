@@ -2,9 +2,10 @@ name: Build and Release
 
 on:
   push:
+    branches: [ main ]       # 推送到 main 分支时自动构建
     tags:
-      - 'v*'
-  workflow_dispatch:   # 这一行让你可以在网页上手动点按钮运行
+      - 'v*'                # 打 v 开头的标签时构建 + 发布 Release
+  workflow_dispatch:        # 保留手动触发按钮
 
 jobs:
   build:
@@ -31,7 +32,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./publish/WallpaperChanger.exe
-          draft: true
+          draft: false
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
