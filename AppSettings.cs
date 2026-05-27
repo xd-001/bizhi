@@ -8,7 +8,10 @@ public class AppSettings
     public int IntervalSeconds { get; set; } = 600;
     public bool StartWithWindows { get; set; } = false;
     public List<string> GameProcessNames { get; set; } = new();
-    public bool MultiMonitorSameWallpaper { get; set; } = false;   // 新增
+    public bool MultiMonitorSameWallpaper { get; set; } = false;
+    public bool SmoothTransition { get; set; } = false;       // 新增：平滑过渡
+    public bool GuestMode { get; set; } = false;              // 新增：访客模式
+    public string GuestFolder { get; set; } = "";             // 新增：访客文件夹
 
     public static readonly string DefaultFolderName = "默认";
     public static readonly string LikeFolderName = "喜欢";
