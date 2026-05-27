@@ -11,6 +11,7 @@ public class MainContext : ApplicationContext
     private Timer? timer;
     private System.Threading.Timer? gameCheckTimer;
     private bool isGameMode;
+    private LikeDislikeForm? likeDislikeForm;   // 新增
 
     public MainContext()
     {
@@ -35,7 +36,19 @@ public class MainContext : ApplicationContext
 
         trayIcon.DoubleClick += (s, e) => OpenSettings();
 
+        // 启动桌面悬浮按钮
+        ShowLikeDislikeButtons();
+
         InitializeWallpaper();
+    }
+
+    // 显示桌面右下角按钮
+    private void ShowLikeDislikeButtons()
+    {
+        likeDislikeForm = new LikeDislikeForm();
+        likeDislikeForm.LikeClicked += MarkAsLike;
+        likeDislikeForm.DislikeClicked += MarkAsDislike;
+        likeDislikeForm.Show();
     }
 
     private void InitializeWallpaper()
@@ -60,7 +73,6 @@ public class MainContext : ApplicationContext
         gameCheckTimer = new System.Threading.Timer(_ =>
         {
             bool wasGameMode = isGameMode;
-            // 游戏检测：全屏 或 指定进程运行
             isGameMode = GameDetector.IsFullScreenAppRunning() ||
                          GameDetector.IsProcessRunning(settings.GameProcessNames);
             if (wasGameMode && !isGameMode)
@@ -78,10 +90,9 @@ public class MainContext : ApplicationContext
 
     private void ChangeWallpaper()
     {
-        // 1. 将当前壁纸移动到“默认”文件夹（如果用户没手动移动过）
+        // 将当前壁纸移动到“默认”文件夹（如果用户没手动移动过）
         manager.MoveCurrentToDefaultIfNotMoved();
 
-        // 2. 获取新壁纸并设置
         uint monitorCount = 1;
         try
         {
@@ -138,6 +149,8 @@ public class MainContext : ApplicationContext
     {
         timer?.Stop();
         gameCheckTimer?.Dispose();
+        likeDislikeForm?.Close();
+        likeDislikeForm?.Dispose();
         trayIcon.Visible = false;
         Application.Exit();
     }
