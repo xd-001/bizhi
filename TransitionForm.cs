@@ -33,11 +33,11 @@ public class TransitionForm : Form
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
-        TopMost = false;
+        TopMost = false;                     // 关键：不置顶，不遮挡其他程序
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.Black;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.DoubleBuffer | ControlStyles.Opaque, true);
-        Bounds = screen.Bounds;
+        Bounds = screen.Bounds;              // 精确匹配屏幕区域
 
         _timer = new System.Windows.Forms.Timer { Interval = 20 };
         _timer.Tick += Timer_Tick;
@@ -75,7 +75,7 @@ public class TransitionForm : Form
                 break;
             case WallpaperHelper.DesktopWallpaperStyle.Tile:
                 {
-                    using var tileBrush = new TextureBrush(img, System.Drawing.Drawing2D.WrapMode.Tile);
+                    using var tileBrush = new TextureBrush(img, WrapMode.Tile);
                     g.FillRectangle(tileBrush, 0, 0, width, height);
                 }
                 break;
@@ -120,6 +120,7 @@ public class TransitionForm : Form
         if (_currentStep >= _fadeSteps)
         {
             _timer?.Stop();
+            // 动画结束，关闭窗口（非模态允许直接关闭）
             BeginInvoke(new Action(() => { Close(); Dispose(); }));
         }
     }
@@ -127,8 +128,9 @@ public class TransitionForm : Form
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
+        // 绘制旧截图（全不透明）
         g.DrawImage(_oldScreenshot, 0, 0);
-
+        // 绘制新壁纸，透明度逐渐增加
         float alpha = (float)_currentStep / _fadeSteps;
         if (alpha > 0)
         {
@@ -143,16 +145,18 @@ public class TransitionForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         _newWallpaper.Dispose();
+        // _oldScreenshot 由外部拥有，不释放
         base.OnFormClosed(e);
     }
 
+    // 窗口不激活、鼠标穿透
     protected override CreateParams CreateParams
     {
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x08000000;
-            cp.ExStyle |= 0x00000020;
+            cp.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE
+            cp.ExStyle |= 0x00000020; // WS_EX_TRANSPARENT
             return cp;
         }
     }
