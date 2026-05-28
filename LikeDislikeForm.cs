@@ -6,9 +6,8 @@ public partial class LikeDislikeForm : Form
     public event Action? NextClicked;
     public event Action? DislikeClicked;
 
-    private Panel buttonPanel;
     private Button btnLike, btnNext, btnDislike;
-    private readonly Size _minSize = new Size(200, 60);
+    private readonly Size _minSize = new Size(220, 60);
     private Point _dragOffset;
     private bool _isDragging;
 
@@ -20,45 +19,28 @@ public partial class LikeDislikeForm : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(30, 30, 30);
         MinimumSize = _minSize;
-        Padding = new Padding(3);     // 留出边缘用于调整大小和拖动
-
-        buttonPanel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.Transparent
-        };
+        Padding = new Padding(4);    // 留出边缘可拖拽
 
         btnLike = CreateButton("❤️ 喜欢", Color.FromArgb(255, 80, 80));
-        btnLike.Click += (s, e) => LikeClicked?.Invoke();
-        btnLike.MouseDown += Button_MouseDown;
-        btnLike.MouseMove += Button_MouseMove;
-        btnLike.MouseUp += Button_MouseUp;
+        btnLike.Click += (s, e) => { LikeClicked?.Invoke(); };
 
         btnNext = CreateButton("➡️ 下一张", Color.White);
-        btnNext.Click += (s, e) => NextClicked?.Invoke();
-        btnNext.MouseDown += Button_MouseDown;
-        btnNext.MouseMove += Button_MouseMove;
-        btnNext.MouseUp += Button_MouseUp;
+        btnNext.Click += (s, e) => { NextClicked?.Invoke(); };
 
         btnDislike = CreateButton("❌ 不喜欢", Color.FromArgb(180, 180, 180));
-        btnDislike.Click += (s, e) => DislikeClicked?.Invoke();
-        btnDislike.MouseDown += Button_MouseDown;
-        btnDislike.MouseMove += Button_MouseMove;
-        btnDislike.MouseUp += Button_MouseUp;
+        btnDislike.Click += (s, e) => { DislikeClicked?.Invoke(); };
 
-        buttonPanel.Controls.Add(btnLike);
-        buttonPanel.Controls.Add(btnNext);
-        buttonPanel.Controls.Add(btnDislike);
-        Controls.Add(buttonPanel);
+        Controls.Add(btnLike);
+        Controls.Add(btnNext);
+        Controls.Add(btnDislike);
 
         Size = _minSize;
         ArrangeButtons();
 
-        // 窗体本身也支持拖拽（空白边缘）
-        MouseDown += Form_MouseDown;
-        MouseMove += Form_MouseMove;
-        MouseUp += Form_MouseUp;
-        SetStyle(ControlStyles.ResizeRedraw, true);
+        // 只通过窗体空白区域拖拽
+        MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) { _isDragging = true; _dragOffset = e.Location; } };
+        MouseMove += (s, e) => { if (_isDragging) { Location = new Point(Location.X + e.X - _dragOffset.X, Location.Y + e.Y - _dragOffset.Y); } };
+        MouseUp += (s, e) => { if (e.Button == MouseButtons.Left) _isDragging = false; };
     }
 
     private Button CreateButton(string text, Color foreColor)
@@ -70,10 +52,11 @@ public partial class LikeDislikeForm : Form
             ForeColor = foreColor,
             Font = new Font("Microsoft YaHei", 11, FontStyle.Bold),
             BackColor = Color.FromArgb(45, 45, 48),
-            Margin = new Padding(2),
-            Padding = new Padding(2),
+            Margin = new Padding(0),
+            Padding = new Padding(0),
             TextAlign = ContentAlignment.MiddleCenter,
-            Cursor = Cursors.Hand
+            Cursor = Cursors.Hand,
+            AutoSize = false
         };
         btn.FlatAppearance.BorderSize = 1;
         btn.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 80);
@@ -84,9 +67,9 @@ public partial class LikeDislikeForm : Form
 
     private void ArrangeButtons()
     {
-        if (buttonPanel == null) return;
-        int w = buttonPanel.ClientSize.Width / 3;
-        int h = buttonPanel.ClientSize.Height;
+        if (btnLike == null) return;
+        int w = ClientSize.Width / 3;
+        int h = ClientSize.Height;
         btnLike.Size = new Size(w, h);
         btnLike.Location = new Point(0, 0);
         btnNext.Size = new Size(w, h);
@@ -101,62 +84,7 @@ public partial class LikeDislikeForm : Form
         ArrangeButtons();
     }
 
-    // 按钮上的拖拽事件（转发给窗体处理）
-    private void Button_MouseDown(object? sender, MouseEventArgs e)
-    {
-        if (e.Button == MouseButtons.Left)
-        {
-            _isDragging = true;
-            _dragOffset = e.Location;
-            // 将坐标转换为窗体坐标
-            if (sender is Control c)
-                _dragOffset = new Point(e.X + c.Location.X + Padding.Left, e.Y + c.Location.Y + Padding.Top);
-        }
-    }
-
-    private void Button_MouseMove(object? sender, MouseEventArgs e)
-    {
-        if (_isDragging)
-        {
-            Point screenPos = PointToScreen(new Point(e.X + ((Control)sender).Location.X + Padding.Left,
-                                                      e.Y + ((Control)sender).Location.Y + Padding.Top));
-            Location = new Point(screenPos.X - _dragOffset.X, screenPos.Y - _dragOffset.Y);
-        }
-    }
-
-    private void Button_MouseUp(object? sender, MouseEventArgs e)
-    {
-        if (e.Button == MouseButtons.Left)
-            _isDragging = false;
-    }
-
-    // 窗体自身的拖拽（边缘空白处）
-    private void Form_MouseDown(object? sender, MouseEventArgs e)
-    {
-        if (e.Button == MouseButtons.Left)
-        {
-            _isDragging = true;
-            _dragOffset = e.Location;
-        }
-    }
-
-    private void Form_MouseMove(object? sender, MouseEventArgs e)
-    {
-        if (_isDragging)
-        {
-            Location = new Point(
-                Location.X + e.X - _dragOffset.X,
-                Location.Y + e.Y - _dragOffset.Y);
-        }
-    }
-
-    private void Form_MouseUp(object? sender, MouseEventArgs e)
-    {
-        if (e.Button == MouseButtons.Left)
-            _isDragging = false;
-    }
-
-    // 边缘调整大小处理
+    // 边缘调整大小
     protected override void WndProc(ref Message m)
     {
         const int WM_NCHITTEST = 0x84;
@@ -168,7 +96,7 @@ public partial class LikeDislikeForm : Form
         {
             Point pt = PointToClient(new Point(m.LParam.ToInt32() & 0xffff, (m.LParam.ToInt32() >> 16) & 0xffff));
             Size sz = ClientSize;
-            int bw = 6; // 边缘检测宽度
+            int bw = 6;
             bool l = pt.X <= bw, r = pt.X >= sz.Width - bw, t = pt.Y <= bw, b = pt.Y >= sz.Height - bw;
             if (t && l) m.Result = (IntPtr)HTTOPLEFT;
             else if (t && r) m.Result = (IntPtr)HTTOPRIGHT;
@@ -178,7 +106,7 @@ public partial class LikeDislikeForm : Form
             else if (b) m.Result = (IntPtr)HTBOTTOM;
             else if (l) m.Result = (IntPtr)HTLEFT;
             else if (r) m.Result = (IntPtr)HTRIGHT;
-            else m.Result = (IntPtr)HTCLIENT;
+            // 不设置 HTCLIENT，保留默认行为，这样按钮可点击，空白区域可以拖动（因为我们在 MouseDown 中处理）
         }
     }
 }
