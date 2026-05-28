@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Runtime.InteropServices;
 using WallpaperChanger.Services;
 using Timer = System.Timers.Timer;
 
@@ -140,10 +141,36 @@ public class MainContext : ApplicationContext
     private void InitializeWallpaper()
     {
         string activeFolder = GetActiveFolder();
-        if (Directory.Exists(activeFolder))
+        if (!Directory.Exists(activeFolder))
         {
-            manager.LoadFolder(activeFolder);
-            // 启动时不进行过渡，直接给所有屏幕设一张初始壁纸（统一）
+            if (string.IsNullOrWhiteSpace(activeFolder))
+                MessageBox.Show("尚未设置壁纸文件夹，请右键托盘图标进入“设置”选择文件夹。", "提示");
+            else
+                MessageBox.Show($"壁纸文件夹不存在：{activeFolder}", "错误");
+            StartTimers();
+            return;
+        }
+
+        manager.LoadFolder(activeFolder);
+
+        // 为每个屏幕设置不同的随机壁纸（如果多屏），否则统一
+        var screens = Screen.AllScreens;
+        string[] monitorIds = WallpaperHelper.GetMonitorIds();
+        if (monitorIds.Length == screens.Length)
+        {
+            for (int i = 0; i < screens.Length; i++)
+            {
+                var img = manager.GetRandomImage();
+                if (img != null)
+                {
+                    WallpaperHelper.SetWallpaperForMonitor(monitorIds[i], img, (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle);
+                    if (i == 0) _currentWallpaperPath = img;
+                }
+            }
+        }
+        else
+        {
+            // 无法获取ID时，统一设置主屏壁纸
             var firstImg = manager.GetRandomImage();
             if (firstImg != null)
             {
@@ -151,13 +178,8 @@ public class MainContext : ApplicationContext
                 _currentWallpaperPath = firstImg;
             }
         }
-        else
-        {
-            if (string.IsNullOrWhiteSpace(activeFolder))
-                MessageBox.Show("尚未设置壁纸文件夹，请右键托盘图标进入“设置”选择文件夹。", "提示");
-            else
-                MessageBox.Show($"壁纸文件夹不存在：{activeFolder}", "错误");
-        }
+
+        _currentScreenIndex = 0; // 从头开始轮换
         StartTimers();
     }
 
@@ -186,12 +208,22 @@ public class MainContext : ApplicationContext
     }
 
     /// <summary>
-    /// 轮流切换：只换当前轮到的那一个屏幕
+    /// 轮流切换壁纸：只更换当前轮到的那个屏幕
     /// </summary>
     private void ChangeWallpaper(bool useTransition = true)
     {
         var screens = Screen.AllScreens;
         if (screens.Length == 0) return;
+
+        _currentScreenIndex = _currentScreenIndex % screens.Length;
+        var targetScreen = screens[_currentScreenIndex];
+
+        // 如果启用独立暂停且目标屏幕被占用，跳过此次切换（索引依然递增）
+        if (settings.PerMonitorPause && IsScreenOccupied(targetScreen))
+        {
+            _currentScreenIndex = (_currentScreenIndex + 1) % screens.Length;
+            return;
+        }
 
         // 访客模式下不移动文件
         if (!settings.GuestMode && !string.IsNullOrEmpty(_currentWallpaperPath))
@@ -204,32 +236,52 @@ public class MainContext : ApplicationContext
             }
         }
 
-        // 获取当前屏幕
-        _currentScreenIndex = _currentScreenIndex % screens.Length;
-        var targetScreen = screens[_currentScreenIndex];
-
-        // 选取一张新壁纸
+        // 选取新壁纸
         var newImg = manager.GetRandomImage();
         if (newImg == null) return;
         _currentWallpaperPath = newImg;
 
+        // 获取该屏幕的监视器ID
+        string[] monitorIds = WallpaperHelper.GetMonitorIds();
+        string? monitorId = null;
+        int screenIndex = Array.IndexOf(screens, targetScreen);
+        if (screenIndex >= 0 && screenIndex < monitorIds.Length)
+            monitorId = monitorIds[screenIndex];
+
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
-        // 设置该屏幕的壁纸
-        SetWallpaperForScreen(targetScreen, newImg, style);
-
-        // 如果启用过渡，仅对当前屏幕区域做淡入
         if (useTransition && settings.SmoothTransition)
         {
+            // 1. 先截取该屏幕当前图像（旧壁纸）
+            Bitmap? oldScreenshot = CaptureScreen(targetScreen);
+            // 2. 设置新壁纸（桌面立刻更新）
+            if (monitorId != null)
+                WallpaperHelper.SetWallpaperForMonitor(monitorId, newImg, style);
+            else
+                WallpaperHelper.SetWallpapers(new[] { newImg }, style); // 回退
+
+            // 3. 在后台线程启动过渡窗口，显示旧截图逐渐淡出，新壁纸图片逐渐显现
             Task.Run(() =>
             {
                 try
                 {
-                    var transition = new TransitionForm(targetScreen, newImg, settings.TransitionSpeed);
-                    transition.ShowDialog();
+                    if (oldScreenshot != null)
+                    {
+                        var transition = new TransitionForm(targetScreen, oldScreenshot, newImg, settings.TransitionSpeed);
+                        transition.ShowDialog();
+                        oldScreenshot.Dispose();
+                    }
                 }
                 catch { }
             });
+        }
+        else
+        {
+            // 无过渡直接设置
+            if (monitorId != null)
+                WallpaperHelper.SetWallpaperForMonitor(monitorId, newImg, style);
+            else
+                WallpaperHelper.SetWallpapers(new[] { newImg }, style);
         }
 
         // 索引递增，准备下一次换下一个屏幕
@@ -237,22 +289,39 @@ public class MainContext : ApplicationContext
     }
 
     /// <summary>
-    /// 为指定屏幕设置壁纸
+    /// 截取指定屏幕的内容
     /// </summary>
-    private void SetWallpaperForScreen(Screen screen, string path, WallpaperHelper.DesktopWallpaperStyle style)
+    private Bitmap? CaptureScreen(Screen screen)
     {
-        string[] monitorIds = WallpaperHelper.GetMonitorIds();
-        int index = Array.IndexOf(Screen.AllScreens, screen);
-        if (index >= 0 && index < monitorIds.Length)
+        try
         {
-            WallpaperHelper.SetWallpaperForMonitor(monitorIds[index], path, style);
+            var bmp = new Bitmap(screen.Bounds.Width, screen.Bounds.Height);
+            using (var g = Graphics.FromImage(bmp))
+                g.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, bmp.Size);
+            return bmp;
         }
-        else
-        {
-            // 无法获取ID时，直接调用总设置（可能只影响主屏，但至少不报错）
-            WallpaperHelper.SetWallpapers(new[] { path }, style);
-        }
+        catch { return null; }
     }
+
+    /// <summary>
+    /// 检测指定屏幕是否被全屏窗口占据
+    /// </summary>
+    private bool IsScreenOccupied(Screen screen)
+    {
+        IntPtr fg = GetForegroundWindow();
+        if (fg == IntPtr.Zero) return false;
+        GetWindowRect(fg, out RECT rect);
+        var windowScreen = Screen.FromHandle(fg);
+        if (!windowScreen.DeviceName.Equals(screen.DeviceName)) return false;
+        return rect.Left <= screen.Bounds.Left && rect.Top <= screen.Bounds.Top &&
+               rect.Right >= screen.Bounds.Right && rect.Bottom >= screen.Bounds.Bottom;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern int GetWindowRect(IntPtr hwnd, out RECT rect);
+    private struct RECT { public int Left, Top, Right, Bottom; }
 
     private void MarkAsLike()
     {
@@ -261,6 +330,7 @@ public class MainContext : ApplicationContext
         if (root == null) return;
         string likeFolder = Path.Combine(root, AppSettings.LikeFolderName);
         manager.MoveWallpaperToFolder(_currentWallpaperPath, likeFolder);
+        _currentWallpaperPath = null; // 防止再次移动
     }
 
     private void MarkAsDislike()
@@ -270,6 +340,7 @@ public class MainContext : ApplicationContext
         if (root == null) return;
         string dislikeFolder = Path.Combine(root, AppSettings.DislikeFolderName);
         manager.MoveWallpaperToFolder(_currentWallpaperPath, dislikeFolder);
+        _currentWallpaperPath = null;
     }
 
     private void OpenSettings()
@@ -286,9 +357,8 @@ public class MainContext : ApplicationContext
                 RegisterHotKey();
                 string activeFolder = GetActiveFolder();
                 manager.LoadFolder(activeFolder);
-                // 重置轮换索引，重新开始
-                _currentScreenIndex = 0;
-                ChangeWallpaper(useTransition: false);
+                // 重置轮换索引并重新初始化所有屏幕
+                InitializeWallpaper();
                 StartTimers();
             }
         }
