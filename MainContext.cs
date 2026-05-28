@@ -25,13 +25,12 @@ public class MainContext : ApplicationContext
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
-        // 加载托盘图标（从嵌入资源）
+        // 托盘图标（从嵌入资源加载）
         Icon? appIcon = null;
         try
         {
             using var stream = typeof(MainContext).Assembly.GetManifestResourceStream("WallpaperChanger.app.ico");
-            if (stream != null)
-                appIcon = new Icon(stream);
+            if (stream != null) appIcon = new Icon(stream);
         }
         catch { }
         appIcon ??= SystemIcons.Application;
@@ -184,30 +183,22 @@ public class MainContext : ApplicationContext
         if (!settings.GuestMode)
             manager.MoveCurrentToDefaultIfNotMoved();
 
+        // 确定活跃的屏幕（未被占用）
+        int screenCount = Screen.AllScreens.Length;
         string[] monitorIds = WallpaperHelper.GetMonitorIds();
         int monitorCount = monitorIds.Length;
-        if (monitorCount == 0)
-        {
-            // 无法获取显示器ID，使用传统方式直接设置所有屏幕
-            var img = manager.GetRandomImage();
-            if (img != null)
-            {
-                WallpaperHelper.SetWallpapers(new[] { img }, (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle);
-                manager.SetCurrentWallpapers(new[] { img });
-            }
-            return;
-        }
+        if (monitorCount == 0) monitorCount = screenCount; // 无法获取ID时使用Screen数量
 
         List<int> activeScreens = new();
         for (int i = 0; i < monitorCount; i++)
         {
-            if (settings.PerMonitorPause && IsScreenOccupied(i))
+            if (settings.PerMonitorPause && i < screenCount && IsScreenOccupied(i))
                 continue;
             activeScreens.Add(i);
         }
-        if (activeScreens.Count == 0)
-            return;
+        if (activeScreens.Count == 0) return;
 
+        // 获取壁纸图片
         string[] images;
         if (settings.MultiMonitorSameWallpaper)
         {
@@ -225,35 +216,46 @@ public class MainContext : ApplicationContext
                 images = padded;
             }
         }
-
         if (images.Length == 0) return;
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
+        // 平滑过渡
         if (useTransition && settings.SmoothTransition)
         {
+            // 计算需要显示在全屏过渡的图片数组（如果所有屏幕都更换）
+            string[] allScreenImages;
             if (activeScreens.Count == monitorCount)
             {
-                var allImages = Enumerable.Range(0, monitorCount)
-                    .Select(i => images[activeScreens.IndexOf(i) % images.Length])
-                    .Where(s => s != null).Cast<string>().ToArray();
-                Task.Run(() =>
+                // 所有屏幕都换，构造对应索引的图片数组
+                allScreenImages = new string[monitorCount];
+                for (int i = 0; i < monitorCount; i++)
                 {
-                    try
-                    {
-                        var transition = new TransitionForm(allImages, settings.TransitionSpeed);
-                        transition.ShowDialog();
-                    }
-                    catch { }
-                    SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
-                    manager.SetCurrentWallpapers(images);
-                });
+                    int idxInActive = activeScreens.IndexOf(i);
+                    allScreenImages[i] = idxInActive >= 0 ? images[idxInActive] : "";
+                }
             }
             else
             {
+                // 部分屏幕换，过渡可能只覆盖更换的屏幕？简单处理：只更换活跃屏幕，无过渡
                 SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
                 manager.SetCurrentWallpapers(images);
+                return;
             }
+
+            // 异步执行过渡
+            Task.Run(() =>
+            {
+                try
+                {
+                    var transition = new TransitionForm(allScreenImages, settings.TransitionSpeed);
+                    transition.ShowDialog();
+                }
+                catch { }
+                // 过渡结束后真正设置壁纸
+                SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
+                manager.SetCurrentWallpapers(images);
+            });
         }
         else
         {
@@ -264,11 +266,19 @@ public class MainContext : ApplicationContext
 
     private void SetWallpapersForMonitors(string[] monitorIds, string[] images, List<int> screenIndices, WallpaperHelper.DesktopWallpaperStyle style)
     {
-        for (int i = 0; i < screenIndices.Count; i++)
+        if (monitorIds.Length == 0)
         {
-            int idx = screenIndices[i];
-            if (idx < monitorIds.Length && i < images.Length)
-                WallpaperHelper.SetWallpaperForMonitor(monitorIds[idx], images[i], style);
+            // 无法获取ID，直接调用 SetWallpapers 整体设置，images 长度已匹配屏幕数量
+            WallpaperHelper.SetWallpapers(images, style);
+        }
+        else
+        {
+            for (int i = 0; i < screenIndices.Count; i++)
+            {
+                int idx = screenIndices[i];
+                if (idx < monitorIds.Length && i < images.Length)
+                    WallpaperHelper.SetWallpaperForMonitor(monitorIds[idx], images[i], style);
+            }
         }
     }
 
@@ -276,6 +286,7 @@ public class MainContext : ApplicationContext
     {
         IntPtr fg = GetForegroundWindow();
         if (fg == IntPtr.Zero) return false;
+        if (screenIndex >= Screen.AllScreens.Length) return false;
         var screen = Screen.AllScreens[screenIndex];
         GetWindowRect(fg, out RECT rect);
         var windowScreen = Screen.FromHandle(fg);
@@ -332,10 +343,7 @@ public class MainContext : ApplicationContext
             }
         }
         catch (Exception ex) { MessageBox.Show($"打开设置失败：{ex.Message}", "错误"); }
-        finally
-        {
-            _isSettingsOpen = false;
-        }
+        finally { _isSettingsOpen = false; }
     }
 
     private void OpenGallery()
@@ -371,10 +379,8 @@ public class MainContext : ApplicationContext
     {
         RegistryKey? rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
         string appName = "WallpaperChanger";
-        if (enable)
-            rk?.SetValue(appName, Application.ExecutablePath);
-        else
-            rk?.DeleteValue(appName, false);
+        if (enable) rk?.SetValue(appName, Application.ExecutablePath);
+        else rk?.DeleteValue(appName, false);
     }
 
     private void ExitApplication()
