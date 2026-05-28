@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Runtime.InteropServices;
 using WallpaperChanger.Services;
 using Timer = System.Timers.Timer;
 
@@ -13,8 +14,8 @@ public class MainContext : ApplicationContext
     private System.Threading.Timer? gameCheckTimer;
     private bool isGameMode;
     private List<LikeDislikeForm> likeDislikeForms = new();
+    private HotKeyManager? hotKeyManager;
 
-    // 托盘菜单项引用，用于更新勾选状态
     private ToolStripMenuItem? startupMenuItem;
     private ToolStripMenuItem? guestModeMenuItem;
 
@@ -23,14 +24,9 @@ public class MainContext : ApplicationContext
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
-        // 安全加载托盘图标
+        // 托盘图标
         Icon? appIcon = null;
-        try
-        {
-            if (File.Exists("app.ico"))
-                appIcon = new Icon("app.ico");
-        }
-        catch { }
+        try { if (File.Exists("app.ico")) appIcon = new Icon("app.ico"); } catch { }
         appIcon ??= SystemIcons.Application;
 
         trayIcon = new NotifyIcon()
@@ -43,35 +39,22 @@ public class MainContext : ApplicationContext
         BuildContextMenu();
         trayIcon.DoubleClick += (s, e) => OpenSettings();
 
-        try
-        {
-            ShowLikeDislikeButtons();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"创建桌面按钮失败：{ex.Message}\n{ex.StackTrace}", "警告",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
+        try { ShowLikeDislikeButtons(); }
+        catch (Exception ex) { MessageBox.Show($"创建桌面按钮失败：{ex.Message}", "警告"); }
 
+        RegisterHotKey();
         InitializeWallpaper();
     }
 
     private void BuildContextMenu()
     {
         var contextMenu = new ContextMenuStrip();
-
-        // 立即切换
         contextMenu.Items.Add("立即切换", null, (s, e) => ChangeWallpaper());
-
-        // 我喜欢 / 我不喜欢
         contextMenu.Items.Add("我喜欢", null, (s, e) => MarkAsLike());
         contextMenu.Items.Add("我不喜欢", null, (s, e) => MarkAsDislike());
         contextMenu.Items.Add("-");
 
-        // 开机启动（可勾选）
-        startupMenuItem = new ToolStripMenuItem("开机启动");
-        startupMenuItem.CheckOnClick = true;
-        startupMenuItem.Checked = settings.StartWithWindows;
+        startupMenuItem = new ToolStripMenuItem("开机启动") { CheckOnClick = true, Checked = settings.StartWithWindows };
         startupMenuItem.Click += (s, e) =>
         {
             settings.StartWithWindows = startupMenuItem.Checked;
@@ -80,44 +63,42 @@ public class MainContext : ApplicationContext
         };
         contextMenu.Items.Add(startupMenuItem);
 
-        // 访客模式（可勾选）
-        guestModeMenuItem = new ToolStripMenuItem("访客模式");
-        guestModeMenuItem.CheckOnClick = true;
-        guestModeMenuItem.Checked = settings.GuestMode;
+        guestModeMenuItem = new ToolStripMenuItem("访客模式") { CheckOnClick = true, Checked = settings.GuestMode };
         guestModeMenuItem.Click += (s, e) =>
         {
             settings.GuestMode = guestModeMenuItem.Checked;
             settings.Save();
-            // 立即切换到对应文件夹
             string activeFolder = GetActiveFolder();
             manager.LoadFolder(activeFolder);
             ChangeWallpaper(useTransition: false);
-            StartTimers();   // 重启定时器（以防间隔设置变化）
+            StartTimers();
         };
         contextMenu.Items.Add(guestModeMenuItem);
 
         contextMenu.Items.Add("-");
+        contextMenu.Items.Add("图库浏览", null, (s, e) => OpenGallery());
         contextMenu.Items.Add("设置", null, (s, e) => OpenSettings());
+        contextMenu.Items.Add("使用说明", null, (s, e) => ShowHelp());
         contextMenu.Items.Add("退出", null, (s, e) => ExitApplication());
 
         trayIcon.ContextMenuStrip = contextMenu;
     }
 
-    /// <summary>
-    /// 更新菜单项的勾选状态（从设置窗口返回后同步）
-    /// </summary>
     private void UpdateMenuChecks()
     {
-        if (startupMenuItem != null)
-            startupMenuItem.Checked = settings.StartWithWindows;
-        if (guestModeMenuItem != null)
-            guestModeMenuItem.Checked = settings.GuestMode;
+        if (startupMenuItem != null) startupMenuItem.Checked = settings.StartWithWindows;
+        if (guestModeMenuItem != null) guestModeMenuItem.Checked = settings.GuestMode;
+    }
+
+    private void RegisterHotKey()
+    {
+        hotKeyManager?.Dispose();
+        hotKeyManager = new HotKeyManager(9001, settings.GetHotKeyModifiers(), settings.HotKeyKey, ChangeWallpaper);
     }
 
     private void ShowLikeDislikeButtons()
     {
         if (Screen.AllScreens.Length == 0) return;
-
         foreach (var screen in Screen.AllScreens)
         {
             if (screen == null) continue;
@@ -125,7 +106,6 @@ public class MainContext : ApplicationContext
             form.LikeClicked += MarkAsLike;
             form.NextClicked += () => ChangeWallpaper();
             form.DislikeClicked += MarkAsDislike;
-
             var area = screen.WorkingArea;
             int x = Math.Max(area.Left + 10, area.Right - form.Width - 10);
             int y = Math.Max(area.Top + 10, area.Bottom - form.Height - 10);
@@ -183,18 +163,19 @@ public class MainContext : ApplicationContext
         if (!settings.GuestMode)
             manager.MoveCurrentToDefaultIfNotMoved();
 
-        uint monitorCount = 1;
-        try
+        string[] monitorIds = WallpaperHelper.GetMonitorIds();
+        int monitorCount = monitorIds.Length;
+        if (monitorCount == 0) monitorCount = 1;
+
+        // 收集需要更换的屏幕索引
+        List<int> activeScreens = new();
+        for (int i = 0; i < monitorCount; i++)
         {
-            Type? type = Type.GetTypeFromProgID("DesktopWallpaper.Wallpaper");
-            if (type != null)
-            {
-                dynamic wallpaper = Activator.CreateInstance(type)!;
-                if (wallpaper != null)
-                    monitorCount = wallpaper.GetMonitorDevicePathCount();
-            }
+            if (settings.PerMonitorPause && IsScreenOccupied(i))
+                continue;
+            activeScreens.Add(i);
         }
-        catch { }
+        if (activeScreens.Count == 0) return;
 
         string[] images;
         if (settings.MultiMonitorSameWallpaper)
@@ -204,12 +185,12 @@ public class MainContext : ApplicationContext
         }
         else
         {
-            images = manager.GetRandomImages((int)monitorCount);
-            if (images.Length > 0 && images.Length < monitorCount)
+            images = manager.GetRandomImages(activeScreens.Count);
+            if (images.Length > 0 && images.Length < activeScreens.Count)
             {
-                var padded = new string[monitorCount];
-                for (int i = 0; i < monitorCount; i++)
-                    padded[i] = images[i % images.Length];
+                var padded = new string[activeScreens.Count];
+                for (int idx = 0; idx < activeScreens.Count; idx++)
+                    padded[idx] = images[idx % images.Length];
                 images = padded;
             }
         }
@@ -217,24 +198,72 @@ public class MainContext : ApplicationContext
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
+        // 应用壁纸到需要更换的屏幕
         if (useTransition && settings.SmoothTransition)
         {
-            Task.Run(() =>
+            // 过渡目前仍为全屏过渡（无法按屏幕单独过渡，简单处理：如果全部活跃则全屏过渡，否则直接设置）
+            if (activeScreens.Count == monitorCount)
             {
-                try
+                var allImages = Enumerable.Range(0, monitorCount)
+                    .Select(i => images[activeScreens.IndexOf(i) % images.Length])
+                    .Where(s => s != null).Cast<string>().ToArray();
+                Task.Run(() =>
                 {
-                    var transition = new TransitionForm(images, settings.TransitionSpeed);
-                    transition.ShowDialog();
-                }
-                catch { }
+                    try
+                    {
+                        var transition = new TransitionForm(allImages, settings.TransitionSpeed);
+                        transition.ShowDialog();
+                    }
+                    catch { }
+                    SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
+                    manager.SetCurrentWallpapers(images);
+                });
+            }
+            else
+            {
+                SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
                 manager.SetCurrentWallpapers(images);
-            });
+            }
         }
         else
         {
-            WallpaperHelper.SetWallpapers(images, style);
+            SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
             manager.SetCurrentWallpapers(images);
         }
+    }
+
+    private void SetWallpapersForMonitors(string[] monitorIds, string[] images, List<int> screenIndices, WallpaperHelper.DesktopWallpaperStyle style)
+    {
+        for (int i = 0; i < screenIndices.Count; i++)
+        {
+            int idx = screenIndices[i];
+            if (idx < monitorIds.Length && i < images.Length)
+                WallpaperHelper.SetWallpaperForMonitor(monitorIds[idx], images[i], style);
+        }
+    }
+
+    private bool IsScreenOccupied(int screenIndex)
+    {
+        // 简单检测：获取指定屏幕上的前台窗口并检查是否全屏
+        IntPtr fg = GetForegroundWindow();
+        if (fg == IntPtr.Zero) return false;
+        var screen = Screen.AllScreens[screenIndex];
+        GetWindowRect(fg, out RECT rect);
+        var windowScreen = Screen.FromHandle(fg);
+        if (windowScreen.DeviceName != screen.DeviceName) return false; // 前台窗口不在这个屏幕上
+        return IsFullScreen(rect, screen);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern int GetWindowRect(IntPtr hwnd, out RECT rect);
+    private struct RECT { public int Left, Top, Right, Bottom; }
+    private bool IsFullScreen(RECT rect, Screen screen)
+    {
+        var bounds = screen.Bounds;
+        return rect.Left <= bounds.Left && rect.Top <= bounds.Top &&
+               rect.Right >= bounds.Right && rect.Bottom >= bounds.Bottom;
     }
 
     private void MarkAsLike()
@@ -263,17 +292,44 @@ public class MainContext : ApplicationContext
             if (form.ShowDialog() == DialogResult.OK)
             {
                 settings = AppSettings.Load() ?? new AppSettings();
-                UpdateMenuChecks();   // 设置窗口可能修改了开机启动和访客模式，同步勾选状态
+                UpdateMenuChecks();
+                RegisterHotKey();  // 快捷键可能变化
                 string activeFolder = GetActiveFolder();
                 manager.LoadFolder(activeFolder);
                 ChangeWallpaper(useTransition: false);
                 StartTimers();
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) { MessageBox.Show($"打开设置失败：{ex.Message}", "错误"); }
+    }
+
+    private void OpenGallery()
+    {
+        try
         {
-            MessageBox.Show($"打开设置失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            var gallery = new GalleryForm(settings);
+            gallery.Show();
         }
+        catch (Exception ex) { MessageBox.Show($"打开图库失败：{ex.Message}", "错误"); }
+    }
+
+    private void ShowHelp()
+    {
+        string help = @"
+壁纸切换器 使用说明
+
+• 托盘图标右键菜单可快速操作。
+• 桌面右下角按钮：❤️喜欢、➡️下一张、❌不喜欢（可拖拽调整大小）。
+• 快捷键（默认 Ctrl+Shift+W）可在设置中自定义，立即切换壁纸。
+• 设置中可调整切换间隔、壁纸样式、过渡效果。
+• 访客模式：启用后使用独立文件夹，不移动原图库。
+• 游戏检测：支持全屏或指定进程名暂停切换。
+• 每屏幕独立暂停：开启后，仅桌面空闲屏幕更换壁纸。
+• 图库浏览：右键菜单进入，点击缩略图直接设为壁纸。
+
+更多问题请查看项目主页。
+        ";
+        MessageBox.Show(help, "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void SetWindowsStartup(bool enable)
@@ -290,10 +346,8 @@ public class MainContext : ApplicationContext
     {
         timer?.Stop();
         gameCheckTimer?.Dispose();
-        foreach (var f in likeDislikeForms)
-        {
-            try { f.Close(); f.Dispose(); } catch { }
-        }
+        hotKeyManager?.Dispose();
+        foreach (var f in likeDislikeForms) { try { f.Close(); f.Dispose(); } catch { } }
         likeDislikeForms.Clear();
         trayIcon.Visible = false;
         Application.Exit();
