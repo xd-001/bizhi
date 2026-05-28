@@ -21,7 +21,6 @@ public class WallpaperManager
             }
 
             var extensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif" };
-            // 修改点：AllDirectories 让子文件夹（默认/喜欢/不喜欢）中的图片也参与随机
             _images = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories)
                               .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
                               .ToList();
@@ -47,6 +46,9 @@ public class WallpaperManager
         }
     }
 
+    /// <summary>
+    /// 获取 count 张互不相同的随机图片，如果图片不足 count 则尽可能不重复
+    /// </summary>
     public string[] GetRandomImages(int count)
     {
         lock (_lock)
@@ -54,25 +56,49 @@ public class WallpaperManager
             if (_images.Count == 0) return Array.Empty<string>();
             if (_images.Count <= count)
             {
+                // 打乱全部图片，避免顺序重复
                 var shuffled = _images.OrderBy(_ => _random.Next()).ToArray();
-                _lastImage = shuffled[0];
+                if (shuffled.Length > 0) _lastImage = shuffled[0];
                 return shuffled;
             }
 
-            var result = new List<string>();
-            var tempList = new List<string>(_images);
-            if (_lastImage != null && tempList.Count > 1)
-                tempList.Remove(_lastImage);
+            var result = new HashSet<string>();
+            var available = new List<string>(_images);
 
-            for (int i = 0; i < count; i++)
+            // 避免上一张图片出现在第一位
+            if (_lastImage != null && available.Count > 1)
             {
-                if (tempList.Count == 0) break;
-                int idx = _random.Next(tempList.Count);
-                result.Add(tempList[idx]);
-                if (i == 0) _lastImage = tempList[idx];
-                tempList.RemoveAt(idx);
+                available.Remove(_lastImage);
+                result.Add(_lastImage); // 不添加，只为了移除后首位不是它，后面再添加回来
+                available = available.OrderBy(_ => _random.Next()).ToList();
+                available.Insert(0, _lastImage); // 放回但不在首位
             }
-            return result.ToArray();
+
+            while (result.Count < count)
+            {
+                if (available.Count == 0) break;
+                int idx = _random.Next(available.Count);
+                string img = available[idx];
+                if (result.Add(img))
+                {
+                    available.RemoveAt(idx);
+                }
+                // 防止死循环
+                if (result.Count == available.Count) break;
+            }
+            // 如果还是不够，从剩余图片中随机补足
+            var remaining = new List<string>(_images);
+            remaining.RemoveAll(r => result.Contains(r));
+            while (result.Count < count && remaining.Count > 0)
+            {
+                int idx = _random.Next(remaining.Count);
+                result.Add(remaining[idx]);
+                remaining.RemoveAt(idx);
+            }
+
+            var arr = result.ToArray();
+            if (arr.Length > 0) _lastImage = arr[0];
+            return arr;
         }
     }
 
