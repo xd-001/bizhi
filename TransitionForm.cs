@@ -10,16 +10,11 @@ public class TransitionForm : Form
     private int _currentStep = 0;
     private System.Windows.Forms.Timer? _timer;
 
-    public TransitionForm(Screen screen, string newImagePath, int speedLevel = 5)
+    public TransitionForm(Screen screen, Bitmap oldScreenshot, string newImagePath, int speedLevel = 5)
     {
-        // 截图该屏幕当前壁纸
-        _oldScreenshot = new Bitmap(screen.Bounds.Width, screen.Bounds.Height);
-        using (var g = Graphics.FromImage(_oldScreenshot))
-        {
-            g.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, _oldScreenshot.Size);
-        }
+        _oldScreenshot = oldScreenshot;
 
-        // 加载新壁纸并缩放至屏幕尺寸
+        // 将新壁纸缩放至屏幕尺寸
         _newWallpaper = new Bitmap(screen.Bounds.Width, screen.Bounds.Height);
         using (var g = Graphics.FromImage(_newWallpaper))
         {
@@ -27,10 +22,11 @@ public class TransitionForm : Form
             if (File.Exists(newImagePath))
             {
                 using var img = Image.FromFile(newImagePath);
-                g.DrawImage(img, 0, 0, screen.Bounds.Width, screen.Bounds.Height);
+                g.DrawImage(img, 0, 0, _newWallpaper.Width, _newWallpaper.Height);
             }
         }
 
+        // 速度：1~10 对应步数 40~10
         _fadeSteps = Math.Max(10, 40 - (speedLevel - 1) * 3);
 
         FormBorderStyle = FormBorderStyle.None;
@@ -60,8 +56,10 @@ public class TransitionForm : Form
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
+        // 绘制旧截图（全不透明）
         g.DrawImage(_oldScreenshot, 0, 0);
 
+        // 绘制新壁纸，透明度逐渐增加
         float alpha = (float)_currentStep / _fadeSteps;
         if (alpha > 0)
         {
@@ -75,11 +73,12 @@ public class TransitionForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        _oldScreenshot.Dispose();
         _newWallpaper.Dispose();
+        // _oldScreenshot 由调用者负责释放
         base.OnFormClosed(e);
     }
 
+    // 不获取焦点，鼠标穿透
     protected override CreateParams CreateParams
     {
         get
