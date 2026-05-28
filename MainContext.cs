@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using WallpaperChanger.Services;
 using Timer = System.Timers.Timer;
 
@@ -13,6 +14,10 @@ public class MainContext : ApplicationContext
     private bool isGameMode;
     private List<LikeDislikeForm> likeDislikeForms = new();
 
+    // 托盘菜单项引用，用于更新勾选状态
+    private ToolStripMenuItem? startupMenuItem;
+    private ToolStripMenuItem? guestModeMenuItem;
+
     public MainContext()
     {
         settings = AppSettings.Load() ?? new AppSettings();
@@ -22,12 +27,11 @@ public class MainContext : ApplicationContext
         Icon? appIcon = null;
         try
         {
-            // 尝试从本地文件加载你的 app.ico
             if (File.Exists("app.ico"))
                 appIcon = new Icon("app.ico");
         }
         catch { }
-        appIcon ??= SystemIcons.Application; // 兜底
+        appIcon ??= SystemIcons.Application;
 
         trayIcon = new NotifyIcon()
         {
@@ -36,14 +40,7 @@ public class MainContext : ApplicationContext
             Visible = true
         };
 
-        var contextMenu = new ContextMenuStrip();
-        contextMenu.Items.Add("立即切换", null, (s, e) => ChangeWallpaper());
-        contextMenu.Items.Add("我喜欢", null, (s, e) => MarkAsLike());
-        contextMenu.Items.Add("我不喜欢", null, (s, e) => MarkAsDislike());
-        contextMenu.Items.Add("-");
-        contextMenu.Items.Add("设置", null, (s, e) => OpenSettings());
-        contextMenu.Items.Add("退出", null, (s, e) => ExitApplication());
-        trayIcon.ContextMenuStrip = contextMenu;
+        BuildContextMenu();
         trayIcon.DoubleClick += (s, e) => OpenSettings();
 
         try
@@ -57,6 +54,64 @@ public class MainContext : ApplicationContext
         }
 
         InitializeWallpaper();
+    }
+
+    private void BuildContextMenu()
+    {
+        var contextMenu = new ContextMenuStrip();
+
+        // 立即切换
+        contextMenu.Items.Add("立即切换", null, (s, e) => ChangeWallpaper());
+
+        // 我喜欢 / 我不喜欢
+        contextMenu.Items.Add("我喜欢", null, (s, e) => MarkAsLike());
+        contextMenu.Items.Add("我不喜欢", null, (s, e) => MarkAsDislike());
+        contextMenu.Items.Add("-");
+
+        // 开机启动（可勾选）
+        startupMenuItem = new ToolStripMenuItem("开机启动");
+        startupMenuItem.CheckOnClick = true;
+        startupMenuItem.Checked = settings.StartWithWindows;
+        startupMenuItem.Click += (s, e) =>
+        {
+            settings.StartWithWindows = startupMenuItem.Checked;
+            settings.Save();
+            SetWindowsStartup(settings.StartWithWindows);
+        };
+        contextMenu.Items.Add(startupMenuItem);
+
+        // 访客模式（可勾选）
+        guestModeMenuItem = new ToolStripMenuItem("访客模式");
+        guestModeMenuItem.CheckOnClick = true;
+        guestModeMenuItem.Checked = settings.GuestMode;
+        guestModeMenuItem.Click += (s, e) =>
+        {
+            settings.GuestMode = guestModeMenuItem.Checked;
+            settings.Save();
+            // 立即切换到对应文件夹
+            string activeFolder = GetActiveFolder();
+            manager.LoadFolder(activeFolder);
+            ChangeWallpaper(useTransition: false);
+            StartTimers();   // 重启定时器（以防间隔设置变化）
+        };
+        contextMenu.Items.Add(guestModeMenuItem);
+
+        contextMenu.Items.Add("-");
+        contextMenu.Items.Add("设置", null, (s, e) => OpenSettings());
+        contextMenu.Items.Add("退出", null, (s, e) => ExitApplication());
+
+        trayIcon.ContextMenuStrip = contextMenu;
+    }
+
+    /// <summary>
+    /// 更新菜单项的勾选状态（从设置窗口返回后同步）
+    /// </summary>
+    private void UpdateMenuChecks()
+    {
+        if (startupMenuItem != null)
+            startupMenuItem.Checked = settings.StartWithWindows;
+        if (guestModeMenuItem != null)
+            guestModeMenuItem.Checked = settings.GuestMode;
     }
 
     private void ShowLikeDislikeButtons()
@@ -208,6 +263,7 @@ public class MainContext : ApplicationContext
             if (form.ShowDialog() == DialogResult.OK)
             {
                 settings = AppSettings.Load() ?? new AppSettings();
+                UpdateMenuChecks();   // 设置窗口可能修改了开机启动和访客模式，同步勾选状态
                 string activeFolder = GetActiveFolder();
                 manager.LoadFolder(activeFolder);
                 ChangeWallpaper(useTransition: false);
@@ -218,6 +274,16 @@ public class MainContext : ApplicationContext
         {
             MessageBox.Show($"打开设置失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private void SetWindowsStartup(bool enable)
+    {
+        RegistryKey? rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+        string appName = "WallpaperChanger";
+        if (enable)
+            rk?.SetValue(appName, Application.ExecutablePath);
+        else
+            rk?.DeleteValue(appName, false);
     }
 
     private void ExitApplication()
