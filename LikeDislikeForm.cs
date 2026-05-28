@@ -22,9 +22,8 @@ public partial class LikeDislikeForm : Form
         TransparencyKey = Color.Black;
         AllowTransparency = true;
         MinimumSize = _minSize;
-        Padding = new Padding(6);   // 内边距形成边框区域
+        Padding = new Padding(4);
 
-        // 按钮样式
         btnLike = CreateButton("❤️ 喜欢", Color.FromArgb(255, 100, 100));
         btnLike.Click += (s, e) => LikeClicked?.Invoke();
 
@@ -41,7 +40,6 @@ public partial class LikeDislikeForm : Form
         Size = _minSize;
         ArrangeButtons();
 
-        // 拖拽：只在按钮区域外（透明区域）拖动有效？其实透明区域也有 Form 的 MouseDown，我们使用整体窗口拖动
         MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) { _isDragging = true; _dragOffset = e.Location; } };
         MouseMove += (s, e) => { if (_isDragging) { Location = new Point(Location.X + e.X - _dragOffset.X, Location.Y + e.Y - _dragOffset.Y); } };
         MouseUp += (s, e) => { if (e.Button == MouseButtons.Left) _isDragging = false; };
@@ -55,14 +53,14 @@ public partial class LikeDislikeForm : Form
             FlatStyle = FlatStyle.Flat,
             ForeColor = foreColor,
             Font = new Font("Microsoft YaHei", 12, FontStyle.Bold),
-            BackColor = Color.FromArgb(30, 30, 30),   // 半透明深色背景
+            BackColor = Color.FromArgb(30, 30, 30),
             Margin = new Padding(2),
             Padding = new Padding(2),
             TextAlign = ContentAlignment.MiddleCenter,
             Cursor = Cursors.Hand
         };
-        btn.FlatAppearance.BorderSize = 2;               // 边框加粗
-        btn.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200); // 亮色边框
+        btn.FlatAppearance.BorderSize = 2;
+        btn.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
         btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(60, 60, 60);
         btn.FlatAppearance.MouseDownBackColor = Color.FromArgb(80, 80, 80);
         return btn;
@@ -87,7 +85,6 @@ public partial class LikeDislikeForm : Form
         ArrangeButtons();
     }
 
-    // 边缘调整大小
     protected override void WndProc(ref Message m)
     {
         const int WM_NCHITTEST = 0x84;
@@ -99,7 +96,7 @@ public partial class LikeDislikeForm : Form
         {
             Point pt = PointToClient(new Point(m.LParam.ToInt32() & 0xffff, (m.LParam.ToInt32() >> 16) & 0xffff));
             Size sz = ClientSize;
-            int bw = 8; // 边缘热区
+            int bw = 8;
             bool l = pt.X <= bw, r = pt.X >= sz.Width - bw, t = pt.Y <= bw, b = pt.Y >= sz.Height - bw;
             if (t && l) m.Result = (IntPtr)HTTOPLEFT;
             else if (t && r) m.Result = (IntPtr)HTTOPRIGHT;
