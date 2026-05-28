@@ -5,19 +5,18 @@ namespace WallpaperChanger;
 public class TransitionForm : Form
 {
     private readonly string[] _newImages;
-    private readonly int _fadeSteps = 30;
-    private readonly int _fadeInterval = 15; // 总时长=30*15=450ms，基本速度
+    private readonly int _fadeSteps;
     private int _currentStep = 0;
     private System.Windows.Forms.Timer? _timer;
-    private Bitmap? _oldDesktop;
+    private Bitmap? _oldComposite;
     private Bitmap? _newComposite;
+    public event Action? TransitionCompleted;
 
     public TransitionForm(string[] newImages, int speedLevel = 5)
     {
         _newImages = newImages;
-        // 根据 speedLevel 调整步数：1~10 -> 步数 60~10，间隔固定15ms
-        int steps = Math.Max(10, 70 - speedLevel * 6);
-        _fadeSteps = steps;
+        // 根据 speedLevel 1~10 计算步数：1最慢(40步)，10最快(10步)，间隔20ms
+        _fadeSteps = Math.Max(10, 40 - (speedLevel - 1) * 3);
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -25,78 +24,75 @@ public class TransitionForm : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.Black;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.DoubleBuffer | ControlStyles.Opaque, true);
-        Bounds = Screen.AllScreens.Aggregate(Rectangle.Empty, (a, s) => Rectangle.Union(a, s.Bounds));
+        Bounds = GetAllScreensBounds();
 
-        // 截图旧桌面
-        CaptureOldDesktop();
-        // 创建新壁纸合成图
-        CreateNewComposite();
+        // 捕获旧壁纸（所有屏幕的桌面截图）
+        _oldComposite = CaptureDesktop();
+        // 生成新壁纸的合成图
+        _newComposite = CreateNewComposite();
 
-        Opacity = 1;
-        Show();
-        BringToFront();
-        Activate();
-
-        _timer = new System.Windows.Forms.Timer { Interval = _fadeInterval };
+        _timer = new System.Windows.Forms.Timer { Interval = 20 };
         _timer.Tick += Timer_Tick;
-        _timer.Start();
+        Load += (s, e) => _timer.Start();
     }
 
-    private void CaptureOldDesktop()
+    private Rectangle GetAllScreensBounds()
     {
-        _oldDesktop = new Bitmap(Bounds.Width, Bounds.Height);
-        using (var g = Graphics.FromImage(_oldDesktop))
+        return Screen.AllScreens.Aggregate(Rectangle.Empty, (a, s) => Rectangle.Union(a, s.Bounds));
+    }
+
+    private Bitmap CaptureDesktop()
+    {
+        var bounds = GetAllScreensBounds();
+        var bmp = new Bitmap(bounds.Width, bounds.Height);
+        using (var g = Graphics.FromImage(bmp))
         {
-            g.CopyFromScreen(Bounds.Left, Bounds.Top, 0, 0, _oldDesktop.Size);
+            g.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bmp.Size);
         }
+        return bmp;
     }
 
-    private void CreateNewComposite()
+    private Bitmap CreateNewComposite()
     {
-        _newComposite = new Bitmap(Bounds.Width, Bounds.Height);
-        using (var g = Graphics.FromImage(_newComposite))
+        var bounds = GetAllScreensBounds();
+        var bmp = new Bitmap(bounds.Width, bounds.Height);
+        using (var g = Graphics.FromImage(bmp))
         {
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Low;
-            int i = 0;
-            foreach (var screen in Screen.AllScreens)
+            for (int i = 0; i < Screen.AllScreens.Length; i++)
             {
-                string? path = _newImages[i % _newImages.Length];
-                if (File.Exists(path))
-                {
-                    using var img = Image.FromFile(path);
-                    var rect = screen.Bounds;
-                    int x = rect.Left - Bounds.Left;
-                    int y = rect.Top - Bounds.Top;
-                    g.DrawImage(img, new Rectangle(x, y, rect.Width, rect.Height));
-                }
-                i++;
+                string path = _newImages[i % _newImages.Length];
+                if (!File.Exists(path)) continue;
+                using var img = Image.FromFile(path);
+                var rect = Screen.AllScreens[i].Bounds;
+                int x = rect.Left - bounds.Left;
+                int y = rect.Top - bounds.Top;
+                g.DrawImage(img, new Rectangle(x, y, rect.Width, rect.Height));
             }
         }
+        return bmp;
     }
 
     private void Timer_Tick(object? sender, EventArgs e)
     {
         _currentStep++;
+        Invalidate();
         if (_currentStep >= _fadeSteps)
         {
             _timer?.Stop();
-            // 过渡完成，关闭窗口
-            Close();
-            Dispose();
-            return;
+            TransitionCompleted?.Invoke();
+            // 延迟一点关闭窗口，避免闪烁
+            Task.Delay(100).ContinueWith(_ => BeginInvoke(() => { Close(); Dispose(); }));
         }
-
-        // 重绘
-        Invalidate();
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        if (_oldDesktop == null || _newComposite == null) return;
+        if (_oldComposite == null || _newComposite == null) return;
 
-        float alpha = (float)_currentStep / _fadeSteps; // 新壁纸的透明度
+        float alpha = (float)_currentStep / _fadeSteps; // 新壁纸透明度
         var g = e.Graphics;
-        g.DrawImage(_oldDesktop, 0, 0);
+        g.DrawImage(_oldComposite, 0, 0);
         using var ia = new ImageAttributes();
         ColorMatrix cm = new ColorMatrix { Matrix33 = alpha };
         ia.SetColorMatrix(cm, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
@@ -106,11 +102,8 @@ public class TransitionForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        _oldDesktop?.Dispose();
+        _oldComposite?.Dispose();
         _newComposite?.Dispose();
         base.OnFormClosed(e);
     }
-
-    // 允许窗口显示但不获取焦点
-    protected override bool ShowWithoutActivation => true;
 }
