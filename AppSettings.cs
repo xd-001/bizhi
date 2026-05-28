@@ -9,9 +9,16 @@ public class AppSettings
     public bool StartWithWindows { get; set; } = false;
     public List<string> GameProcessNames { get; set; } = new();
     public bool MultiMonitorSameWallpaper { get; set; } = false;
-    public bool SmoothTransition { get; set; } = false;       // 新增：平滑过渡
-    public bool GuestMode { get; set; } = false;              // 新增：访客模式
-    public string GuestFolder { get; set; } = "";             // 新增：访客文件夹
+
+    // 壁纸样式：0=拉伸, 1=填充, 2=平铺, 3=居中, 4=适应
+    public int WallpaperStyle { get; set; } = 0;
+
+    // 过渡设置
+    public bool SmoothTransition { get; set; } = false;
+    public int TransitionSpeed { get; set; } = 5;   // 1~10，越大越快（总时间越短）
+
+    public bool GuestMode { get; set; } = false;
+    public string GuestFolder { get; set; } = "";
 
     public static readonly string DefaultFolderName = "默认";
     public static readonly string LikeFolderName = "喜欢";
