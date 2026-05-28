@@ -24,7 +24,6 @@ public class MainContext : ApplicationContext
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
-        // 托盘图标
         Icon? appIcon = null;
         try { if (File.Exists("app.ico")) appIcon = new Icon("app.ico"); } catch { }
         appIcon ??= SystemIcons.Application;
@@ -93,7 +92,8 @@ public class MainContext : ApplicationContext
     private void RegisterHotKey()
     {
         hotKeyManager?.Dispose();
-        hotKeyManager = new HotKeyManager(9001, settings.GetHotKeyModifiers(), settings.HotKeyKey, ChangeWallpaper);
+        // 修正：将 ChangeWallpaper 包装为无参 Action
+        hotKeyManager = new HotKeyManager(9001, settings.GetHotKeyModifiers(), settings.HotKeyKey, () => ChangeWallpaper());
     }
 
     private void ShowLikeDislikeButtons()
@@ -167,7 +167,6 @@ public class MainContext : ApplicationContext
         int monitorCount = monitorIds.Length;
         if (monitorCount == 0) monitorCount = 1;
 
-        // 收集需要更换的屏幕索引
         List<int> activeScreens = new();
         for (int i = 0; i < monitorCount; i++)
         {
@@ -198,10 +197,8 @@ public class MainContext : ApplicationContext
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
-        // 应用壁纸到需要更换的屏幕
         if (useTransition && settings.SmoothTransition)
         {
-            // 过渡目前仍为全屏过渡（无法按屏幕单独过渡，简单处理：如果全部活跃则全屏过渡，否则直接设置）
             if (activeScreens.Count == monitorCount)
             {
                 var allImages = Enumerable.Range(0, monitorCount)
@@ -244,13 +241,12 @@ public class MainContext : ApplicationContext
 
     private bool IsScreenOccupied(int screenIndex)
     {
-        // 简单检测：获取指定屏幕上的前台窗口并检查是否全屏
         IntPtr fg = GetForegroundWindow();
         if (fg == IntPtr.Zero) return false;
         var screen = Screen.AllScreens[screenIndex];
         GetWindowRect(fg, out RECT rect);
         var windowScreen = Screen.FromHandle(fg);
-        if (windowScreen.DeviceName != screen.DeviceName) return false; // 前台窗口不在这个屏幕上
+        if (windowScreen.DeviceName != screen.DeviceName) return false;
         return IsFullScreen(rect, screen);
     }
 
@@ -293,7 +289,7 @@ public class MainContext : ApplicationContext
             {
                 settings = AppSettings.Load() ?? new AppSettings();
                 UpdateMenuChecks();
-                RegisterHotKey();  // 快捷键可能变化
+                RegisterHotKey();
                 string activeFolder = GetActiveFolder();
                 manager.LoadFolder(activeFolder);
                 ChangeWallpaper(useTransition: false);
