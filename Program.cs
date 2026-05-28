@@ -10,7 +10,7 @@ static class Program
         if (!createdNew)
         {
             MessageBox.Show("壁纸切换器已经在运行中。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return; // 防止多开
+            return;
         }
 
         try
@@ -20,7 +20,7 @@ static class Program
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"程序启动失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"程序启动失败：{ex.Message}\n\n堆栈跟踪：\n{ex.StackTrace}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }
