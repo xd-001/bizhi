@@ -25,7 +25,6 @@ public class MainContext : ApplicationContext
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
-        // 托盘图标（从嵌入资源加载）
         Icon? appIcon = null;
         try
         {
@@ -45,8 +44,15 @@ public class MainContext : ApplicationContext
         BuildContextMenu();
         trayIcon.DoubleClick += (s, e) => OpenSettings();
 
-        try { ShowLikeDislikeButtons(); }
-        catch (Exception ex) { MessageBox.Show($"创建桌面按钮失败：{ex.Message}", "警告"); }
+        // 创建桌面按钮（每个屏幕一个）
+        try
+        {
+            ShowLikeDislikeButtons();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"创建桌面按钮失败：{ex.Message}", "警告");
+        }
 
         RegisterHotKey();
         InitializeWallpaper();
@@ -112,19 +118,32 @@ public class MainContext : ApplicationContext
     private void ShowLikeDislikeButtons()
     {
         if (Screen.AllScreens.Length == 0) return;
+
         foreach (var screen in Screen.AllScreens)
         {
             if (screen == null) continue;
-            var form = new LikeDislikeForm();
-            form.LikeClicked += MarkAsLike;
-            form.NextClicked += () => ChangeWallpaper();
-            form.DislikeClicked += MarkAsDislike;
-            var area = screen.WorkingArea;
-            int x = Math.Max(area.Left + 10, area.Right - form.Width - 10);
-            int y = Math.Max(area.Top + 10, area.Bottom - form.Height - 10);
-            form.Location = new Point(x, y);
-            form.Show();
-            likeDislikeForms.Add(form);
+            try
+            {
+                var form = new LikeDislikeForm();
+                form.LikeClicked += MarkAsLike;
+                form.NextClicked += () => ChangeWallpaper();
+                form.DislikeClicked += MarkAsDislike;
+
+                // 定位：右下角，留 10 像素边距
+                var area = screen.WorkingArea;
+                int x = area.Right - form.Width - 10;
+                int y = area.Bottom - form.Height - 10;
+                // 防止坐标超出屏幕（极端情况）
+                x = Math.Max(area.Left, x);
+                y = Math.Max(area.Top, y);
+                form.Location = new Point(x, y);
+                form.Show();
+                likeDislikeForms.Add(form);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"创建按钮失败于屏幕 {screen.DeviceName}: {ex.Message}");
+            }
         }
     }
 
@@ -183,11 +202,10 @@ public class MainContext : ApplicationContext
         if (!settings.GuestMode)
             manager.MoveCurrentToDefaultIfNotMoved();
 
-        // 确定活跃的屏幕（未被占用）
         int screenCount = Screen.AllScreens.Length;
         string[] monitorIds = WallpaperHelper.GetMonitorIds();
         int monitorCount = monitorIds.Length;
-        if (monitorCount == 0) monitorCount = screenCount; // 无法获取ID时使用Screen数量
+        if (monitorCount == 0) monitorCount = screenCount;
 
         List<int> activeScreens = new();
         for (int i = 0; i < monitorCount; i++)
@@ -198,7 +216,6 @@ public class MainContext : ApplicationContext
         }
         if (activeScreens.Count == 0) return;
 
-        // 获取壁纸图片
         string[] images;
         if (settings.MultiMonitorSameWallpaper)
         {
@@ -220,42 +237,33 @@ public class MainContext : ApplicationContext
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
-        // 平滑过渡
         if (useTransition && settings.SmoothTransition)
         {
-            // 计算需要显示在全屏过渡的图片数组（如果所有屏幕都更换）
-            string[] allScreenImages;
             if (activeScreens.Count == monitorCount)
             {
-                // 所有屏幕都换，构造对应索引的图片数组
-                allScreenImages = new string[monitorCount];
+                string[] allScreenImages = new string[monitorCount];
                 for (int i = 0; i < monitorCount; i++)
                 {
                     int idxInActive = activeScreens.IndexOf(i);
                     allScreenImages[i] = idxInActive >= 0 ? images[idxInActive] : "";
                 }
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var transition = new TransitionForm(allScreenImages, settings.TransitionSpeed);
+                        transition.ShowDialog();
+                    }
+                    catch { }
+                    SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
+                    manager.SetCurrentWallpapers(images);
+                });
             }
             else
             {
-                // 部分屏幕换，过渡可能只覆盖更换的屏幕？简单处理：只更换活跃屏幕，无过渡
                 SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
                 manager.SetCurrentWallpapers(images);
-                return;
             }
-
-            // 异步执行过渡
-            Task.Run(() =>
-            {
-                try
-                {
-                    var transition = new TransitionForm(allScreenImages, settings.TransitionSpeed);
-                    transition.ShowDialog();
-                }
-                catch { }
-                // 过渡结束后真正设置壁纸
-                SetWallpapersForMonitors(monitorIds, images, activeScreens, style);
-                manager.SetCurrentWallpapers(images);
-            });
         }
         else
         {
@@ -268,7 +276,6 @@ public class MainContext : ApplicationContext
     {
         if (monitorIds.Length == 0)
         {
-            // 无法获取ID，直接调用 SetWallpapers 整体设置，images 长度已匹配屏幕数量
             WallpaperHelper.SetWallpapers(images, style);
         }
         else
