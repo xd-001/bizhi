@@ -15,12 +15,21 @@ public partial class GalleryForm : Form
             ? settings.GuestFolder
             : settings.WallpaperFolder;
 
-        Text = "图库浏览 - " + _imageFolder;
-        Width = 800;
-        Height = 600;
+        Text = "图库浏览 - " + Path.GetFileName(_imageFolder);
+        Width = 850;
+        Height = 650;
         StartPosition = FormStartPosition.CenterScreen;
+        Font = new Font("Microsoft YaHei", 9);
+        BackColor = Color.FromArgb(32, 32, 32);
+        ForeColor = Color.White;
 
-        panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true };
+        panel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = Color.FromArgb(40, 40, 40),
+            Padding = new Padding(5)
+        };
         Controls.Add(panel);
 
         LoadImages();
@@ -34,7 +43,7 @@ public partial class GalleryForm : Form
 
         var files = Directory.GetFiles(_imageFolder, "*.*", SearchOption.AllDirectories)
                              .Where(f => extensions.Contains(Path.GetExtension(f).ToLower()))
-                             .Take(500) // 限制显示500张，避免卡顿
+                             .Take(500)
                              .ToArray();
 
         foreach (var file in files)
@@ -43,12 +52,29 @@ public partial class GalleryForm : Form
             {
                 var pic = new PictureBox
                 {
-                    Size = new Size(150, 100),
+                    Size = new Size(160, 110),
                     SizeMode = PictureBoxSizeMode.Zoom,
-                    Image = Image.FromFile(file),
+                    BorderStyle = BorderStyle.FixedSingle,
+                    Margin = new Padding(4),
                     Tag = file
                 };
+                pic.Paint += (s, e) =>
+                {
+                    // 绘制文件名在底部
+                    var g = e.Graphics;
+                    string name = Path.GetFileName(file);
+                    var font = new Font("Microsoft YaHei", 7);
+                    var brush = new SolidBrush(Color.White);
+                    var bgBrush = new SolidBrush(Color.FromArgb(60, 0, 0, 0));
+                    var size = g.MeasureString(name, font);
+                    g.FillRectangle(bgBrush, new RectangleF(0, pic.Height - size.Height - 2, pic.Width, size.Height + 2));
+                    g.DrawString(name, font, brush, 2, pic.Height - size.Height - 1);
+                };
                 pic.Click += Pic_Click;
+                using (var img = Image.FromFile(file))
+                {
+                    pic.Image = new Bitmap(img, pic.Size); // 缩略图
+                }
                 panel.Controls.Add(pic);
             }
             catch { }
@@ -59,12 +85,11 @@ public partial class GalleryForm : Form
     {
         if (sender is PictureBox pic && pic.Tag is string path)
         {
-            // 点击图片直接设为当前壁纸（根据多屏设置）
             var style = (WallpaperHelper.DesktopWallpaperStyle)_settings.WallpaperStyle;
             uint monitorCount = (uint)Screen.AllScreens.Length;
             var images = Enumerable.Repeat(path, (int)monitorCount).ToArray();
             WallpaperHelper.SetWallpapers(images, style);
-            MessageBox.Show($"已设置壁纸：{Path.GetFileName(path)}", "图库");
+            MessageBox.Show($"已设置壁纸：{Path.GetFileName(path)}", "图库", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 }
