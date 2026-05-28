@@ -33,7 +33,6 @@ public class MainContext : ApplicationContext
         contextMenu.Items.Add("设置", null, (s, e) => OpenSettings());
         contextMenu.Items.Add("退出", null, (s, e) => ExitApplication());
         trayIcon.ContextMenuStrip = contextMenu;
-
         trayIcon.DoubleClick += (s, e) => OpenSettings();
 
         ShowLikeDislikeButtons();
@@ -81,9 +80,7 @@ public class MainContext : ApplicationContext
             isGameMode = GameDetector.IsFullScreenAppRunning() ||
                          GameDetector.IsProcessRunning(settings.GameProcessNames);
             if (wasGameMode && !isGameMode)
-            {
                 ChangeWallpaperIfAllowed();
-            }
         }, null, 0, 1500);
     }
 
@@ -114,27 +111,28 @@ public class MainContext : ApplicationContext
         if (settings.MultiMonitorSameWallpaper)
         {
             var img = manager.GetRandomImage();
-            images = img != null ? new string[] { img } : Array.Empty<string>();
+            images = img != null ? new[] { img } : Array.Empty<string>();
         }
         else
         {
             images = manager.GetRandomImages((int)monitorCount);
         }
-
         if (images.Length == 0) return;
 
-        bool doTransition = useTransition && settings.SmoothTransition;
-        if (doTransition)
+        // 获取壁纸样式枚举
+        var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
+
+        if (useTransition && settings.SmoothTransition)
         {
             Task.Run(() =>
             {
-                var transition = new TransitionForm(images);
+                var transition = new TransitionForm(images, settings.TransitionSpeed);
                 transition.ShowDialog();
             });
         }
         else
         {
-            WallpaperHelper.SetWallpapers(images);
+            WallpaperHelper.SetWallpapers(images, style);
             manager.SetCurrentWallpapers(images);
         }
     }
