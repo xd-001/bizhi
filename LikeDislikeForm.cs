@@ -6,7 +6,7 @@ public partial class LikeDislikeForm : Form
     public event Action? NextClicked;
     public event Action? DislikeClicked;
 
-    private Button btnLike, btnNext, btnDislike;
+    private Button? btnLike, btnNext, btnDislike;
     private Size _minSize = new Size(120, 40);
     private Point _dragOffset;
     private bool _isDragging = false;
@@ -15,15 +15,14 @@ public partial class LikeDislikeForm : Form
     {
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
-        TopMost = false;                      // 不再置顶
+        TopMost = false;
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.Black;
-        TransparencyKey = Color.Black;        // 黑色透明
+        TransparencyKey = Color.Black;
         AllowTransparency = true;
         MinimumSize = _minSize;
-        Size = _minSize;
+        // 注意：先创建按钮，再设置 Size，避免过早触发 ArrangeButtons
 
-        // 三个按钮，均匀分布
         btnLike = CreateButton("❤️", Color.Red);
         btnLike.Click += (s, e) => LikeClicked?.Invoke();
 
@@ -37,14 +36,15 @@ public partial class LikeDislikeForm : Form
         Controls.Add(btnNext);
         Controls.Add(btnDislike);
 
+        // 现在安全设置窗口大小
+        Size = _minSize;
+
         ArrangeButtons();
 
-        // 鼠标事件用于拖动窗口
         MouseDown += Form_MouseDown;
         MouseMove += Form_MouseMove;
         MouseUp += Form_MouseUp;
 
-        // 允许通过边缘调整大小（处理 WM_NCHITTEST）
         SetStyle(ControlStyles.ResizeRedraw, true);
     }
 
@@ -67,6 +67,7 @@ public partial class LikeDislikeForm : Form
 
     private void ArrangeButtons()
     {
+        if (btnLike == null || btnNext == null || btnDislike == null) return;
         int w = ClientSize.Width / 3;
         int h = ClientSize.Height;
         btnLike.Size = new Size(w, h);
@@ -85,7 +86,6 @@ public partial class LikeDislikeForm : Form
         ArrangeButtons();
     }
 
-    // 拖拽移动
     private void Form_MouseDown(object? sender, MouseEventArgs e)
     {
         if (e.Button == MouseButtons.Left)
@@ -111,7 +111,6 @@ public partial class LikeDislikeForm : Form
             _isDragging = false;
     }
 
-    // 边缘调整大小处理
     protected override void WndProc(ref Message m)
     {
         const int WM_NCHITTEST = 0x84;
@@ -131,7 +130,7 @@ public partial class LikeDislikeForm : Form
         {
             Point pt = PointToClient(new Point(m.LParam.ToInt32() & 0xffff, (m.LParam.ToInt32() >> 16) & 0xffff));
             Size clientSize = ClientSize;
-            int borderWidth = 5; // 边缘检测宽度
+            int borderWidth = 5;
 
             bool left = pt.X <= borderWidth;
             bool right = pt.X >= clientSize.Width - borderWidth;
