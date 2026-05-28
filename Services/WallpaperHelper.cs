@@ -37,6 +37,7 @@ public static class WallpaperHelper
         }
         catch { }
 
+        // 回退：设置主显示器壁纸
         if (imagePaths.Length > 0 && File.Exists(imagePaths[0]))
         {
             const int SPI_SETDESKWALLPAPER = 20;
@@ -47,7 +48,7 @@ public static class WallpaperHelper
     }
 
     /// <summary>
-    /// 只设置指定显示器的壁纸
+    /// 设置单个监视器壁纸
     /// </summary>
     public static void SetWallpaperForMonitor(string monitorId, string path, DesktopWallpaperStyle style)
     {
@@ -63,13 +64,13 @@ public static class WallpaperHelper
         }
         catch
         {
-            // 如果单显示器设置失败，尝试全屏设置（回退）
+            // 失败时尝试整体设置
             SetWallpapers(new[] { path }, style);
         }
     }
 
     /// <summary>
-    /// 获取所有显示器 ID 列表
+    /// 获取所有监视器ID
     /// </summary>
     public static string[] GetMonitorIds()
     {
