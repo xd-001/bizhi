@@ -92,9 +92,11 @@ public class MainContext : ApplicationContext
 
     private void ChangeWallpaper(bool useTransition = true)
     {
+        // 访客模式下不移动文件
         if (!settings.GuestMode)
             manager.MoveCurrentToDefaultIfNotMoved();
 
+        // 获取当前显示器数量
         uint monitorCount = 1;
         try
         {
@@ -110,24 +112,37 @@ public class MainContext : ApplicationContext
         string[] images;
         if (settings.MultiMonitorSameWallpaper)
         {
+            // 所有屏幕同一张
             var img = manager.GetRandomImage();
             images = img != null ? new[] { img } : Array.Empty<string>();
         }
         else
         {
+            // 每个屏幕随机不同壁纸
             images = manager.GetRandomImages((int)monitorCount);
+            // 如果返回的图片数量少于显示器数量（例如图片不够），循环填充保证每个屏幕都有图
+            if (images.Length > 0 && images.Length < monitorCount)
+            {
+                var padded = new string[monitorCount];
+                for (int i = 0; i < monitorCount; i++)
+                    padded[i] = images[i % images.Length];
+                images = padded;
+            }
         }
         if (images.Length == 0) return;
 
-        // 获取壁纸样式枚举
+        // 壁纸样式
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
         if (useTransition && settings.SmoothTransition)
         {
+            // 异步执行过渡
             Task.Run(() =>
             {
                 var transition = new TransitionForm(images, settings.TransitionSpeed);
                 transition.ShowDialog();
+                // 过渡结束后，记录当前壁纸（以便喜欢/不喜欢操作）
+                manager.SetCurrentWallpapers(images);
             });
         }
         else
