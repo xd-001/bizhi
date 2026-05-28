@@ -16,12 +16,17 @@ public class MainContext : ApplicationContext
 
     public MainContext()
     {
-        settings = AppSettings.Load();
+        settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
+
+        // 托盘图标 - 如果 SystemIcons.Application 获取失败，用空图标兜底
+        Icon? icon = null;
+        try { icon = SystemIcons.Application; } catch { }
+        if (icon == null) icon = new Icon(GetType(), "app.ico"); // 兜底
 
         trayIcon = new NotifyIcon()
         {
-            Icon = SystemIcons.Application,
+            Icon = icon ?? SystemIcons.WinLogo,
             Text = "壁纸切换器",
             Visible = true
         };
@@ -36,21 +41,33 @@ public class MainContext : ApplicationContext
         trayIcon.ContextMenuStrip = contextMenu;
         trayIcon.DoubleClick += (s, e) => OpenSettings();
 
-        ShowLikeDislikeButtons();
+        try
+        {
+            ShowLikeDislikeButtons();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"创建桌面按钮失败：{ex.Message}", "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
         InitializeWallpaper();
     }
 
     private void ShowLikeDislikeButtons()
     {
+        if (Screen.AllScreens.Length == 0) return;
+
         foreach (var screen in Screen.AllScreens)
         {
             var form = new LikeDislikeForm();
             form.LikeClicked += MarkAsLike;
-            form.NextClicked += () => ChangeWallpaper();   // 修复：使用 lambda 包装
+            form.NextClicked += () => ChangeWallpaper();
             form.DislikeClicked += MarkAsDislike;
 
             var area = screen.WorkingArea;
-            form.Location = new Point(area.Right - form.Width - 10, area.Bottom - form.Height - 10);
+            int x = Math.Max(area.Left + 10, area.Right - form.Width - 10);
+            int y = Math.Max(area.Top + 10, area.Bottom - form.Height - 10);
+            form.Location = new Point(x, y);
             form.Show();
             likeDislikeForms.Add(form);
         }
@@ -60,7 +77,7 @@ public class MainContext : ApplicationContext
     {
         if (settings.GuestMode && !string.IsNullOrWhiteSpace(settings.GuestFolder) && Directory.Exists(settings.GuestFolder))
             return settings.GuestFolder;
-        return settings.WallpaperFolder;
+        return settings.WallpaperFolder ?? "";
     }
 
     private void InitializeWallpaper()
@@ -77,7 +94,7 @@ public class MainContext : ApplicationContext
     private void StartTimers()
     {
         timer?.Stop();
-        timer = new Timer(settings.IntervalSeconds * 1000);
+        timer = new Timer(Math.Max(1000, settings.IntervalSeconds * 1000)); // 最少1秒
         timer.Elapsed += (s, e) => ChangeWallpaperIfAllowed();
         timer.AutoReset = true;
         timer.Start();
@@ -87,7 +104,7 @@ public class MainContext : ApplicationContext
         {
             bool wasGameMode = isGameMode;
             isGameMode = GameDetector.IsFullScreenAppRunning() ||
-                         GameDetector.IsProcessRunning(settings.GameProcessNames);
+                         (settings.GameProcessNames != null && GameDetector.IsProcessRunning(settings.GameProcessNames));
             if (wasGameMode && !isGameMode)
                 ChangeWallpaperIfAllowed();
         }, null, 0, 1500);
@@ -111,7 +128,8 @@ public class MainContext : ApplicationContext
             if (type != null)
             {
                 dynamic wallpaper = Activator.CreateInstance(type)!;
-                monitorCount = wallpaper.GetMonitorDevicePathCount();
+                if (wallpaper != null)
+                    monitorCount = wallpaper.GetMonitorDevicePathCount();
             }
         }
         catch { }
@@ -141,8 +159,12 @@ public class MainContext : ApplicationContext
         {
             Task.Run(() =>
             {
-                var transition = new TransitionForm(images, settings.TransitionSpeed);
-                transition.ShowDialog();
+                try
+                {
+                    var transition = new TransitionForm(images, settings.TransitionSpeed);
+                    transition.ShowDialog();
+                }
+                catch { }
                 manager.SetCurrentWallpapers(images);
             });
         }
@@ -156,7 +178,7 @@ public class MainContext : ApplicationContext
     private void MarkAsLike()
     {
         if (settings.GuestMode) return;
-        string root = settings.WallpaperFolder;
+        string root = settings.WallpaperFolder ?? "";
         if (string.IsNullOrEmpty(root)) return;
         string likeFolder = Path.Combine(root, AppSettings.LikeFolderName);
         manager.MoveCurrentWallpapers(likeFolder);
@@ -165,7 +187,7 @@ public class MainContext : ApplicationContext
     private void MarkAsDislike()
     {
         if (settings.GuestMode) return;
-        string root = settings.WallpaperFolder;
+        string root = settings.WallpaperFolder ?? "";
         if (string.IsNullOrEmpty(root)) return;
         string dislikeFolder = Path.Combine(root, AppSettings.DislikeFolderName);
         manager.MoveCurrentWallpapers(dislikeFolder);
@@ -173,14 +195,21 @@ public class MainContext : ApplicationContext
 
     private void OpenSettings()
     {
-        var form = new SettingsForm(settings);
-        if (form.ShowDialog() == DialogResult.OK)
+        try
         {
-            settings = AppSettings.Load();
-            string activeFolder = GetActiveFolder();
-            manager.LoadFolder(activeFolder);
-            ChangeWallpaper(useTransition: false);
-            StartTimers();
+            var form = new SettingsForm(settings);
+            if (form.ShowDialog() == DialogResult.OK)
+            {
+                settings = AppSettings.Load() ?? new AppSettings();
+                string activeFolder = GetActiveFolder();
+                manager.LoadFolder(activeFolder);
+                ChangeWallpaper(useTransition: false);
+                StartTimers();
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"打开设置失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -190,8 +219,7 @@ public class MainContext : ApplicationContext
         gameCheckTimer?.Dispose();
         foreach (var f in likeDislikeForms)
         {
-            f.Close();
-            f.Dispose();
+            try { f.Close(); f.Dispose(); } catch { }
         }
         likeDislikeForms.Clear();
         trayIcon.Visible = false;
