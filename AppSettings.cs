@@ -9,16 +9,20 @@ public class AppSettings
     public bool StartWithWindows { get; set; } = false;
     public List<string> GameProcessNames { get; set; } = new();
     public bool MultiMonitorSameWallpaper { get; set; } = false;
-
-    // 壁纸样式：0=拉伸, 1=填充, 2=平铺, 3=居中, 4=适应
     public int WallpaperStyle { get; set; } = 0;
-
-    // 过渡设置
     public bool SmoothTransition { get; set; } = false;
-    public int TransitionSpeed { get; set; } = 5;   // 1~10，越大越快（总时间越短）
-
+    public int TransitionSpeed { get; set; } = 5;
     public bool GuestMode { get; set; } = false;
     public string GuestFolder { get; set; } = "";
+
+    // 快捷键
+    public bool HotKeyCtrl { get; set; } = true;
+    public bool HotKeyShift { get; set; } = true;
+    public bool HotKeyAlt { get; set; } = false;
+    public Keys HotKeyKey { get; set; } = Keys.W;
+
+    // 每屏幕独立暂停（有窗口/全屏的屏幕跳过更换）
+    public bool PerMonitorPause { get; set; } = false;
 
     public static readonly string DefaultFolderName = "默认";
     public static readonly string LikeFolderName = "喜欢";
@@ -43,5 +47,14 @@ public class AppSettings
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
         File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    public uint GetHotKeyModifiers()
+    {
+        uint mod = 0;
+        if (HotKeyCtrl) mod |= 0x0002;
+        if (HotKeyShift) mod |= 0x0004;
+        if (HotKeyAlt) mod |= 0x0001;
+        return mod;
     }
 }
