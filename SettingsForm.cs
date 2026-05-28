@@ -6,14 +6,15 @@ public partial class SettingsForm : Form
 {
     private AppSettings _settings;
     private TextBox txtFolder = new();
-    private NumericUpDown numIntervalSeconds = new();
+    private TrackBar tbInterval = new();        // 换成滑动条
+    private Label lblIntervalVal = new();       // 显示当前秒数
     private CheckBox chkStartup = new();
     private TextBox txtGameProcesses = new();
     private CheckBox chkSameWallpaper = new();
     private CheckBox chkSmooth = new();
-    private TrackBar tbSpeed = new();         // 过渡速度
+    private TrackBar tbSpeed = new();
     private Label lblSpeedVal = new();
-    private ComboBox cmbStyle = new();        // 壁纸样式
+    private ComboBox cmbStyle = new();
     private CheckBox chkGuestMode = new();
     private TextBox txtGuestFolder = new();
     private Button btnBrowseMain = new();
@@ -43,10 +44,12 @@ public partial class SettingsForm : Form
         btnBrowseMain.Click += (s, e) => { using var fbd = new FolderBrowserDialog(); if (fbd.ShowDialog() == DialogResult.OK) txtFolder.Text = fbd.SelectedPath; };
         y += 35;
 
-        // 间隔
-        var lblInterval = new Label { Text = "切换间隔(秒):", Left = 20, Top = y, Width = 100 };
-        numIntervalSeconds = new NumericUpDown { Left = 130, Top = y - 2, Width = 80, Minimum = 15, Maximum = 86400, Value = 600 };
-        y += 35;
+        // 切换间隔滑动条（秒）
+        var lblInterval = new Label { Text = "切换间隔:", Left = 20, Top = y, Width = 80 };
+        tbInterval = new TrackBar { Left = 100, Top = y - 2, Width = 200, Minimum = 15, Maximum = 86400, TickFrequency = 1800, SmallChange = 300, LargeChange = 3600 };
+        tbInterval.ValueChanged += (s, e) => lblIntervalVal.Text = tbInterval.Value + " 秒";
+        lblIntervalVal = new Label { Text = "600 秒", Left = 310, Top = y, Width = 100 };
+        y += 45;
 
         // 开机启动
         chkStartup = new CheckBox { Text = "开机自动启动", Left = 20, Top = y, Width = 150 };
@@ -93,7 +96,7 @@ public partial class SettingsForm : Form
 
         Controls.AddRange(new Control[] {
             lblFolder, txtFolder, btnBrowseMain,
-            lblInterval, numIntervalSeconds,
+            lblInterval, tbInterval, lblIntervalVal,
             chkStartup,
             lblGame, txtGameProcesses,
             chkSameWallpaper,
@@ -107,7 +110,11 @@ public partial class SettingsForm : Form
     private void LoadSettings()
     {
         txtFolder.Text = _settings.WallpaperFolder;
-        numIntervalSeconds.Value = _settings.IntervalSeconds;
+        // 限制值在滑块范围内
+        int interval = Math.Clamp(_settings.IntervalSeconds, tbInterval.Minimum, tbInterval.Maximum);
+        tbInterval.Value = interval;
+        lblIntervalVal.Text = interval + " 秒";
+
         chkStartup.Checked = _settings.StartWithWindows;
         txtGameProcesses.Text = string.Join(",", _settings.GameProcessNames);
         chkSameWallpaper.Checked = _settings.MultiMonitorSameWallpaper;
@@ -122,7 +129,7 @@ public partial class SettingsForm : Form
     private void BtnSave_Click(object? sender, EventArgs e)
     {
         _settings.WallpaperFolder = txtFolder.Text;
-        _settings.IntervalSeconds = (int)numIntervalSeconds.Value;
+        _settings.IntervalSeconds = tbInterval.Value;          // 直接用滑块值（秒）
         _settings.StartWithWindows = chkStartup.Checked;
         _settings.GameProcessNames = txtGameProcesses.Text
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
