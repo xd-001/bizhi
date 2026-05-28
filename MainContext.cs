@@ -12,7 +12,6 @@ public class MainContext : ApplicationContext
     private System.Threading.Timer? gameCheckTimer;
     private bool isGameMode;
 
-    // 每个显示器一个按钮窗口
     private List<LikeDislikeForm> likeDislikeForms = new();
 
     public MainContext()
@@ -41,21 +40,17 @@ public class MainContext : ApplicationContext
         InitializeWallpaper();
     }
 
-    // 在每个显示器右下角创建按钮窗口
     private void ShowLikeDislikeButtons()
     {
         foreach (var screen in Screen.AllScreens)
         {
             var form = new LikeDislikeForm();
-            // 绑定事件
             form.LikeClicked += MarkAsLike;
-            form.NextClicked += ChangeWallpaper;
+            form.NextClicked += () => ChangeWallpaper();   // 修复：使用 lambda 包装
             form.DislikeClicked += MarkAsDislike;
 
-            // 定位到该屏幕工作区右下角
             var area = screen.WorkingArea;
             form.Location = new Point(area.Right - form.Width - 10, area.Bottom - form.Height - 10);
-
             form.Show();
             likeDislikeForms.Add(form);
         }
