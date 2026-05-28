@@ -1,4 +1,5 @@
 using System.Drawing.Imaging;
+using WallpaperChanger.Services;
 
 namespace WallpaperChanger;
 
@@ -10,23 +11,23 @@ public class TransitionForm : Form
     private int _currentStep = 0;
     private System.Windows.Forms.Timer? _timer;
 
-    public TransitionForm(Screen screen, Bitmap oldScreenshot, string newImagePath, int speedLevel = 5)
+    public TransitionForm(Screen screen, Bitmap oldScreenshot, string newImagePath, int speedLevel = 5, WallpaperHelper.DesktopWallpaperStyle style = WallpaperHelper.DesktopWallpaperStyle.Stretch)
     {
         _oldScreenshot = oldScreenshot;
 
-        // 将新壁纸缩放至屏幕尺寸
-        _newWallpaper = new Bitmap(screen.Bounds.Width, screen.Bounds.Height);
+        int w = screen.Bounds.Width;
+        int h = screen.Bounds.Height;
+        _newWallpaper = new Bitmap(w, h);
         using (var g = Graphics.FromImage(_newWallpaper))
         {
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Low;
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
             if (File.Exists(newImagePath))
             {
                 using var img = Image.FromFile(newImagePath);
-                g.DrawImage(img, 0, 0, _newWallpaper.Width, _newWallpaper.Height);
+                DrawImageWithStyle(g, img, w, h, style);
             }
         }
 
-        // 速度：1~10 对应步数 40~10
         _fadeSteps = Math.Max(10, 40 - (speedLevel - 1) * 3);
 
         FormBorderStyle = FormBorderStyle.None;
@@ -40,6 +41,76 @@ public class TransitionForm : Form
         _timer = new System.Windows.Forms.Timer { Interval = 20 };
         _timer.Tick += Timer_Tick;
         Load += (s, e) => _timer.Start();
+    }
+
+    // 根据壁纸样式绘制图片到指定尺寸画布上
+    private void DrawImageWithStyle(Graphics g, Image img, int width, int height, WallpaperHelper.DesktopWallpaperStyle style)
+    {
+        switch (style)
+        {
+            case WallpaperHelper.DesktopWallpaperStyle.Stretch:
+                g.DrawImage(img, 0, 0, width, height);
+                break;
+            case WallpaperHelper.DesktopWallpaperStyle.Fill:
+                {
+                    float imgRatio = (float)img.Width / img.Height;
+                    float screenRatio = (float)width / height;
+                    int drawWidth, drawHeight, x, y;
+                    if (imgRatio > screenRatio) // 图片更宽，高度填满，宽度裁剪
+                    {
+                        drawHeight = height;
+                        drawWidth = (int)(height * imgRatio);
+                        x = (width - drawWidth) / 2;
+                        y = 0;
+                    }
+                    else
+                    {
+                        drawWidth = width;
+                        drawHeight = (int)(width / imgRatio);
+                        x = 0;
+                        y = (height - drawHeight) / 2;
+                    }
+                    g.DrawImage(img, x, y, drawWidth, drawHeight);
+                }
+                break;
+            case WallpaperHelper.DesktopWallpaperStyle.Tile:
+                {
+                    using var tileBrush = new TextureBrush(img, WrapMode.Tile);
+                    g.FillRectangle(tileBrush, 0, 0, width, height);
+                }
+                break;
+            case WallpaperHelper.DesktopWallpaperStyle.Center:
+                {
+                    int x = (width - img.Width) / 2;
+                    int y = (height - img.Height) / 2;
+                    g.DrawImage(img, x, y, img.Width, img.Height);
+                }
+                break;
+            case WallpaperHelper.DesktopWallpaperStyle.Fit:
+                {
+                    float imgRatio = (float)img.Width / img.Height;
+                    float screenRatio = (float)width / height;
+                    int drawWidth, drawHeight;
+                    if (imgRatio > screenRatio)
+                    {
+                        drawWidth = width;
+                        drawHeight = (int)(width / imgRatio);
+                    }
+                    else
+                    {
+                        drawHeight = height;
+                        drawWidth = (int)(height * imgRatio);
+                    }
+                    int x = (width - drawWidth) / 2;
+                    int y = (height - drawHeight) / 2;
+                    g.FillRectangle(Brushes.Black, 0, 0, width, height);
+                    g.DrawImage(img, x, y, drawWidth, drawHeight);
+                }
+                break;
+            default:
+                g.DrawImage(img, 0, 0, width, height);
+                break;
+        }
     }
 
     private void Timer_Tick(object? sender, EventArgs e)
@@ -56,10 +127,8 @@ public class TransitionForm : Form
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        // 绘制旧截图（全不透明）
         g.DrawImage(_oldScreenshot, 0, 0);
 
-        // 绘制新壁纸，透明度逐渐增加
         float alpha = (float)_currentStep / _fadeSteps;
         if (alpha > 0)
         {
@@ -74,18 +143,16 @@ public class TransitionForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         _newWallpaper.Dispose();
-        // _oldScreenshot 由调用者负责释放
         base.OnFormClosed(e);
     }
 
-    // 不获取焦点，鼠标穿透
     protected override CreateParams CreateParams
     {
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE
-            cp.ExStyle |= 0x00000020; // WS_EX_TRANSPARENT
+            cp.ExStyle |= 0x08000000;
+            cp.ExStyle |= 0x00000020;
             return cp;
         }
     }
