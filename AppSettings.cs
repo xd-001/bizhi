@@ -21,8 +21,10 @@ public class AppSettings
     public bool HotKeyAlt { get; set; } = false;
     public Keys HotKeyKey { get; set; } = Keys.W;
 
-    // 每屏幕独立暂停（有窗口/全屏的屏幕跳过更换）
     public bool PerMonitorPause { get; set; } = false;
+
+    // 首次运行标志
+    public bool FirstRun { get; set; } = true;
 
     public static readonly string DefaultFolderName = "默认";
     public static readonly string LikeFolderName = "喜欢";
