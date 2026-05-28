@@ -18,8 +18,6 @@ public class MainContext : ApplicationContext
 
     private ToolStripMenuItem? startupMenuItem;
     private ToolStripMenuItem? guestModeMenuItem;
-
-    // 防止重复打开设置窗口
     private bool _isSettingsOpen = false;
 
     public MainContext()
@@ -27,7 +25,7 @@ public class MainContext : ApplicationContext
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
-        // 加载托盘图标：从嵌入资源读取 app.ico
+        // 加载托盘图标（从嵌入资源）
         Icon? appIcon = null;
         try
         {
@@ -36,7 +34,7 @@ public class MainContext : ApplicationContext
                 appIcon = new Icon(stream);
         }
         catch { }
-        appIcon ??= SystemIcons.Application; // 兜底
+        appIcon ??= SystemIcons.Application;
 
         trayIcon = new NotifyIcon()
         {
@@ -54,7 +52,6 @@ public class MainContext : ApplicationContext
         RegisterHotKey();
         InitializeWallpaper();
 
-        // 首次运行弹窗
         if (settings.FirstRun)
         {
             ShowHelp();
@@ -149,7 +146,6 @@ public class MainContext : ApplicationContext
         }
         else
         {
-            // 文件夹无效，提示用户设置
             if (string.IsNullOrWhiteSpace(activeFolder))
                 MessageBox.Show("尚未设置壁纸文件夹，请右键托盘图标进入“设置”选择文件夹。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
             else
@@ -190,7 +186,17 @@ public class MainContext : ApplicationContext
 
         string[] monitorIds = WallpaperHelper.GetMonitorIds();
         int monitorCount = monitorIds.Length;
-        if (monitorCount == 0) monitorCount = 1;
+        if (monitorCount == 0)
+        {
+            // 无法获取显示器ID，使用传统方式直接设置所有屏幕
+            var img = manager.GetRandomImage();
+            if (img != null)
+            {
+                WallpaperHelper.SetWallpapers(new[] { img }, (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle);
+                manager.SetCurrentWallpapers(new[] { img });
+            }
+            return;
+        }
 
         List<int> activeScreens = new();
         for (int i = 0; i < monitorCount; i++)
@@ -200,10 +206,7 @@ public class MainContext : ApplicationContext
             activeScreens.Add(i);
         }
         if (activeScreens.Count == 0)
-        {
-            // 所有屏幕都被占用，不切换
             return;
-        }
 
         string[] images;
         if (settings.MultiMonitorSameWallpaper)
@@ -223,11 +226,7 @@ public class MainContext : ApplicationContext
             }
         }
 
-        if (images.Length == 0)
-        {
-            // 没有可用的图片（文件夹空或未加载）
-            return;
-        }
+        if (images.Length == 0) return;
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
@@ -316,7 +315,6 @@ public class MainContext : ApplicationContext
 
     private void OpenSettings()
     {
-        // 防止重复打开设置窗口
         if (_isSettingsOpen) return;
         _isSettingsOpen = true;
         try
