@@ -4,10 +4,17 @@ namespace WallpaperChanger.Services;
 
 public static class WallpaperHelper
 {
-    /// <summary>
-    /// 设置多显示器壁纸（无过渡）
-    /// </summary>
-    public static void SetWallpapers(string[] imagePaths)
+    // 壁纸样式枚举，与 Windows COM 接口常量对应
+    public enum DesktopWallpaperStyle
+    {
+        Stretch = 0,
+        Fill = 10,
+        Tile = 1,
+        Center = 2,
+        Fit = 6
+    }
+
+    public static void SetWallpapers(string[] imagePaths, DesktopWallpaperStyle style = DesktopWallpaperStyle.Stretch)
     {
         if (imagePaths.Length == 0) return;
 
@@ -24,13 +31,14 @@ public static class WallpaperHelper
                     string path = imagePaths[i % imagePaths.Length];
                     string monitorId = wallpaper.GetMonitorDevicePathAt(i);
                     wallpaper.SetWallpaper(monitorId, path);
+                    wallpaper.SetPosition((int)style);
                 }
                 return;
             }
         }
         catch { }
 
-        // 回退单屏
+        // 回退：单屏系统
         if (imagePaths.Length > 0 && File.Exists(imagePaths[0]))
         {
             const int SPI_SETDESKWALLPAPER = 20;
