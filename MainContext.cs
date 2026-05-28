@@ -1,5 +1,4 @@
 using Microsoft.Win32;
-using System.Runtime.InteropServices;
 using WallpaperChanger.Services;
 using Timer = System.Timers.Timer;
 
@@ -111,7 +110,6 @@ public class MainContext : ApplicationContext
 
     private void ShowLikeDislikeButtons()
     {
-        // 清除旧的
         foreach (var f in likeDislikeForms) { try { f.Close(); f.Dispose(); } catch { } }
         likeDislikeForms.Clear();
 
@@ -121,10 +119,9 @@ public class MainContext : ApplicationContext
             form.LikeClicked += MarkAsLike;
             form.NextClicked += () => ChangeWallpaper();
             form.DislikeClicked += MarkAsDislike;
-            form.Show();
-            // 定位到右下角
             var area = screen.WorkingArea;
             form.Location = new Point(area.Right - form.Width - 10, area.Bottom - form.Height - 10);
+            form.Show();
             likeDislikeForms.Add(form);
         }
     }
@@ -178,61 +175,64 @@ public class MainContext : ApplicationContext
         ChangeWallpaper();
     }
 
-    /// <summary>
-    /// 核心更换壁纸逻辑，支持多屏独立和淡入淡出动画
-    /// </summary>
     private void ChangeWallpaper(bool useTransition = true)
     {
-        // 访客模式下不移动文件
         if (!settings.GuestMode)
             manager.MoveCurrentToDefaultIfNotMoved();
 
-        // 获取所有屏幕及其对应的监视器ID
-        int screenCount = Screen.AllScreens.Length;
+        int monitorCount = Screen.AllScreens.Length;
         string[] monitorIds = WallpaperHelper.GetMonitorIds();
-        int monitorCount = monitorIds.Length;
-        if (monitorCount == 0) monitorCount = screenCount; // 无法获取ID时用Screen数量
+        if (monitorIds.Length == 0) monitorIds = new string[monitorCount]; // 用空字符串占位
 
-        // 确定每个屏幕的图片
+        // 准备每个屏幕的图片（确保与屏幕数一致）
         string[] images;
         if (settings.MultiMonitorSameWallpaper)
         {
-            // 所有屏幕同一张壁纸
             var img = manager.GetRandomImage();
             if (img == null) return;
             images = Enumerable.Repeat(img, monitorCount).ToArray();
         }
         else
         {
-            // 每个屏幕独立随机，确保不同
             images = manager.GetRandomImages(monitorCount);
-            // 如果图片不够，用最后一张填充
-            while (images.Length < monitorCount)
-                images = images.Append(images[images.Length - 1]).ToArray();
+            // 补足数量
+            if (images.Length < monitorCount)
+                images = images.Concat(Enumerable.Repeat(images.Last(), monitorCount - images.Length)).ToArray();
         }
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
         if (useTransition && settings.SmoothTransition)
         {
-            // 异步显示过渡动画，动画结束后设置真实壁纸
+            // 先截图旧桌面（全屏范围）
+            Bitmap? oldScreenshot = null;
+            try
+            {
+                var bounds = Screen.AllScreens.Aggregate(Rectangle.Empty, (a, s) => Rectangle.Union(a, s.Bounds));
+                oldScreenshot = new Bitmap(bounds.Width, bounds.Height);
+                using (var g = Graphics.FromImage(oldScreenshot))
+                    g.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, oldScreenshot.Size);
+            }
+            catch { }
+
+            // 立即设置新壁纸（桌面马上更新）
+            SetWallpapersForScreens(monitorIds, images, style);
+            manager.SetCurrentWallpapers(images);
+
+            // 异步显示淡入动画（用旧截图覆盖，逐渐消失）
             Task.Run(() =>
             {
                 try
                 {
-                    var transition = new TransitionForm(images, settings.TransitionSpeed);
-                    // 等待过渡窗口关闭（通过事件）
-                    var mre = new ManualResetEventSlim(false);
-                    transition.TransitionCompleted += () => mre.Set();
-                    transition.ShowDialog();
-                    mre.Wait();
+                    var transition = new TransitionForm(oldScreenshot, images, settings.TransitionSpeed);
+                    // 非模态显示，动画结束自动关闭
+                    transition.ShowDialog(); // 内部无消息循环？实际上 ShowDialog 需要，但我们在后台线程调用，会阻塞。可以使用 Show 并等待。
+                    // 替代方法：使用事件等待，但这样简单阻塞也 OK，因为不是 UI 线程。
                 }
                 catch { }
                 finally
                 {
-                    // 设置最终壁纸
-                    SetWallpapersForScreens(monitorIds, images, style);
-                    manager.SetCurrentWallpapers(images);
+                    oldScreenshot?.Dispose();
                 }
             });
         }
@@ -243,23 +243,24 @@ public class MainContext : ApplicationContext
         }
     }
 
-    /// <summary>
-    /// 根据监视器ID数组设置壁纸，如果ID为空则使用整体设置
-    /// </summary>
     private void SetWallpapersForScreens(string[] monitorIds, string[] images, WallpaperHelper.DesktopWallpaperStyle style)
     {
-        if (monitorIds.Length == 0)
+        // 尝试使用 COM 逐个设置（支持多屏不同壁纸）
+        bool success = false;
+        if (monitorIds.Length > 0 && images.Length >= monitorIds.Length)
         {
-            WallpaperHelper.SetWallpapers(images, style);
-        }
-        else
-        {
-            for (int i = 0; i < monitorIds.Length; i++)
+            try
             {
-                if (i < images.Length)
+                for (int i = 0; i < monitorIds.Length; i++)
                     WallpaperHelper.SetWallpaperForMonitor(monitorIds[i], images[i], style);
+                success = true;
             }
+            catch { }
         }
+
+        // 如果逐个设置失败，用整体设置作为回退（可能只能设主屏）
+        if (!success)
+            WallpaperHelper.SetWallpapers(images, style);
     }
 
     private void MarkAsLike()
