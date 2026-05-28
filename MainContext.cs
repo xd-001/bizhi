@@ -11,7 +11,6 @@ public class MainContext : ApplicationContext
     private Timer? timer;
     private System.Threading.Timer? gameCheckTimer;
     private bool isGameMode;
-
     private List<LikeDislikeForm> likeDislikeForms = new();
 
     public MainContext()
@@ -19,14 +18,20 @@ public class MainContext : ApplicationContext
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
-        // 托盘图标 - 如果 SystemIcons.Application 获取失败，用空图标兜底
-        Icon? icon = null;
-        try { icon = SystemIcons.Application; } catch { }
-        if (icon == null) icon = new Icon(GetType(), "app.ico"); // 兜底
+        // 安全加载托盘图标
+        Icon? appIcon = null;
+        try
+        {
+            // 尝试从本地文件加载你的 app.ico
+            if (File.Exists("app.ico"))
+                appIcon = new Icon("app.ico");
+        }
+        catch { }
+        appIcon ??= SystemIcons.Application; // 兜底
 
         trayIcon = new NotifyIcon()
         {
-            Icon = icon ?? SystemIcons.WinLogo,
+            Icon = appIcon,
             Text = "壁纸切换器",
             Visible = true
         };
@@ -47,7 +52,8 @@ public class MainContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"创建桌面按钮失败：{ex.Message}", "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show($"创建桌面按钮失败：{ex.Message}\n{ex.StackTrace}", "警告",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         InitializeWallpaper();
@@ -59,6 +65,7 @@ public class MainContext : ApplicationContext
 
         foreach (var screen in Screen.AllScreens)
         {
+            if (screen == null) continue;
             var form = new LikeDislikeForm();
             form.LikeClicked += MarkAsLike;
             form.NextClicked += () => ChangeWallpaper();
@@ -94,7 +101,7 @@ public class MainContext : ApplicationContext
     private void StartTimers()
     {
         timer?.Stop();
-        timer = new Timer(Math.Max(1000, settings.IntervalSeconds * 1000)); // 最少1秒
+        timer = new Timer(Math.Max(1000, settings.IntervalSeconds * 1000));
         timer.Elapsed += (s, e) => ChangeWallpaperIfAllowed();
         timer.AutoReset = true;
         timer.Start();
