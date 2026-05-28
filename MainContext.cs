@@ -20,17 +20,15 @@ public class MainContext : ApplicationContext
     private ToolStripMenuItem? guestModeMenuItem;
     private bool _isSettingsOpen = false;
 
-    // 轮流切换相关
     private int _currentScreenIndex = 0;
     private string? _currentWallpaperPath = null;
-    private bool _comAvailable = false; // 标记 COM 接口是否可用
+    private bool _comAvailable = false;
 
     public MainContext()
     {
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
-        // 检测 COM 接口可用性（通过尝试获取监视器ID）
         _comAvailable = WallpaperHelper.GetMonitorIds().Length > 0;
 
         // 托盘图标（嵌入资源）
@@ -156,45 +154,30 @@ public class MainContext : ApplicationContext
         }
 
         manager.LoadFolder(activeFolder);
-
         var screens = Screen.AllScreens;
         if (screens.Length == 0) { StartTimers(); return; }
 
+        // 为每个屏幕设置独立的初始壁纸
         if (_comAvailable && screens.Length > 1)
         {
-            // 多屏独立：为每个屏幕设置不同的壁纸
             string[] monitorIds = WallpaperHelper.GetMonitorIds();
-            if (monitorIds.Length == screens.Length)
+            for (int i = 0; i < monitorIds.Length && i < screens.Length; i++)
             {
-                for (int i = 0; i < screens.Length; i++)
+                var img = manager.GetRandomImage();
+                if (img != null)
                 {
-                    var img = manager.GetRandomImage();
-                    if (img != null)
-                    {
-                        WallpaperHelper.SetWallpaperForMonitor(monitorIds[i], img, (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle);
-                        if (i == 0) _currentWallpaperPath = img;
-                    }
-                }
-            }
-            else
-            {
-                // ID 数量不匹配，退化为单图
-                var firstImg = manager.GetRandomImage();
-                if (firstImg != null)
-                {
-                    WallpaperHelper.SetWallpapers(new[] { firstImg }, (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle);
-                    _currentWallpaperPath = firstImg;
+                    WallpaperHelper.SetWallpaperForMonitor(monitorIds[i], img, (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle);
+                    if (i == 0) _currentWallpaperPath = img;
                 }
             }
         }
         else
         {
-            // COM 不可用或单屏：所有屏幕使用同一张壁纸（系统限制）
-            var firstImg = manager.GetRandomImage();
-            if (firstImg != null)
+            var img = manager.GetRandomImage();
+            if (img != null)
             {
-                WallpaperHelper.SetWallpapers(new[] { firstImg }, (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle);
-                _currentWallpaperPath = firstImg;
+                WallpaperHelper.SetWallpapers(new[] { img }, (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle);
+                _currentWallpaperPath = img;
             }
         }
 
@@ -234,12 +217,14 @@ public class MainContext : ApplicationContext
         _currentScreenIndex = _currentScreenIndex % screens.Length;
         var targetScreen = screens[_currentScreenIndex];
 
+        // 独立暂停检测
         if (settings.PerMonitorPause && IsScreenOccupied(targetScreen))
         {
             _currentScreenIndex = (_currentScreenIndex + 1) % screens.Length;
             return;
         }
 
+        // 移动旧壁纸
         if (!settings.GuestMode && !string.IsNullOrEmpty(_currentWallpaperPath))
         {
             string? root = Path.GetDirectoryName(_currentWallpaperPath);
@@ -256,7 +241,7 @@ public class MainContext : ApplicationContext
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
-        // 获取目标屏幕的监视器ID（如果 COM 可用）
+        // 获取目标监视器ID
         string? monitorId = null;
         if (_comAvailable)
         {
@@ -266,29 +251,22 @@ public class MainContext : ApplicationContext
                 monitorId = ids[idx];
         }
 
-        // 先设置壁纸（桌面立即更新）
+        // 设置壁纸
         if (monitorId != null)
             WallpaperHelper.SetWallpaperForMonitor(monitorId, newImg, style);
         else
-            WallpaperHelper.SetWallpapers(new[] { newImg }, style);
+            WallpaperHelper.SetWallpapers(new[] { newImg }, style); // 回退
 
-        // 过渡动画（如果启用）
+        // 过渡动画（非模态，不遮挡）
         if (useTransition && settings.SmoothTransition)
         {
             Bitmap? oldScreenshot = CaptureScreen(targetScreen);
-            Task.Run(() =>
+            if (oldScreenshot != null)
             {
-                try
-                {
-                    if (oldScreenshot != null)
-                    {
-                        var transition = new TransitionForm(targetScreen, oldScreenshot, newImg, settings.TransitionSpeed, style);
-                        transition.ShowDialog();
-                        oldScreenshot.Dispose();
-                    }
-                }
-                catch { }
-            });
+                var transition = new TransitionForm(targetScreen, oldScreenshot, newImg, settings.TransitionSpeed, style);
+                transition.Show(); // 非模态显示，不阻塞，不获取焦点
+                // 窗口会在定时器结束后自动关闭释放
+            }
         }
 
         _currentScreenIndex = (_currentScreenIndex + 1) % screens.Length;
@@ -382,13 +360,14 @@ public class MainContext : ApplicationContext
 
 • 托盘图标右键菜单可快速操作。
 • 桌面右下角按钮：❤️喜欢、➡️下一张、❌不喜欢（可拖拽调整大小）。
-• 快捷键（默认 Ctrl+Shift+W）可在设置中自定义，立即切换壁纸。
+• 快捷键（默认 Ctrl+Shift+W）可自定义，立即切换壁纸。
 • 设置中可调整切换间隔、壁纸样式、过渡效果。
 • 访客模式：启用后使用独立文件夹，不移动原图库。
 • 游戏检测：支持全屏或指定进程名暂停切换。
 • 每屏幕独立暂停：开启后，仅桌面空闲屏幕更换壁纸。
 • 图库浏览：右键菜单进入，点击缩略图直接设为壁纸。
-• 多屏轮流切换：按 A→B→C→A 的顺序每间隔N秒更换一个屏幕的壁纸（需要Windows 10+支持独立壁纸）。
+• 多屏轮流切换：按 A→B→C→A 的顺序每间隔N秒更换一个屏幕的壁纸（需Windows 10+支持独立壁纸）。
+• 若多屏仍同步，请确认系统已更新并允许不同监视器设置不同壁纸（默认支持）。
 
 更多问题请查看项目主页。
         ";
