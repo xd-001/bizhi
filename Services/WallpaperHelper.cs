@@ -4,7 +4,6 @@ namespace WallpaperChanger.Services;
 
 public static class WallpaperHelper
 {
-    // 壁纸样式枚举，与 Windows COM 接口常量对应
     public enum DesktopWallpaperStyle
     {
         Stretch = 0,
@@ -38,7 +37,6 @@ public static class WallpaperHelper
         }
         catch { }
 
-        // 回退：单屏系统
         if (imagePaths.Length > 0 && File.Exists(imagePaths[0]))
         {
             const int SPI_SETDESKWALLPAPER = 20;
@@ -46,6 +44,50 @@ public static class WallpaperHelper
             const int SPIF_SENDCHANGE = 0x02;
             SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, imagePaths[0], SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
         }
+    }
+
+    /// <summary>
+    /// 只设置指定显示器的壁纸
+    /// </summary>
+    public static void SetWallpaperForMonitor(string monitorId, string path, DesktopWallpaperStyle style)
+    {
+        try
+        {
+            Type? type = Type.GetTypeFromProgID("DesktopWallpaper.Wallpaper");
+            if (type != null)
+            {
+                dynamic wallpaper = Activator.CreateInstance(type)!;
+                wallpaper.SetWallpaper(monitorId, path);
+                wallpaper.SetPosition((int)style);
+            }
+        }
+        catch
+        {
+            // 如果单显示器设置失败，尝试全屏设置（回退）
+            SetWallpapers(new[] { path }, style);
+        }
+    }
+
+    /// <summary>
+    /// 获取所有显示器 ID 列表
+    /// </summary>
+    public static string[] GetMonitorIds()
+    {
+        try
+        {
+            Type? type = Type.GetTypeFromProgID("DesktopWallpaper.Wallpaper");
+            if (type != null)
+            {
+                dynamic wallpaper = Activator.CreateInstance(type)!;
+                uint count = wallpaper.GetMonitorDevicePathCount();
+                var ids = new string[count];
+                for (uint i = 0; i < count; i++)
+                    ids[i] = wallpaper.GetMonitorDevicePathAt(i);
+                return ids;
+            }
+        }
+        catch { }
+        return Array.Empty<string>();
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
