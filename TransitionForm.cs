@@ -1,3 +1,4 @@
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using WallpaperChanger.Services;
 
@@ -20,7 +21,7 @@ public class TransitionForm : Form
         _newWallpaper = new Bitmap(w, h);
         using (var g = Graphics.FromImage(_newWallpaper))
         {
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             if (File.Exists(newImagePath))
             {
                 using var img = Image.FromFile(newImagePath);
@@ -43,7 +44,6 @@ public class TransitionForm : Form
         Load += (s, e) => _timer.Start();
     }
 
-    // 根据壁纸样式绘制图片到指定尺寸画布上
     private void DrawImageWithStyle(Graphics g, Image img, int width, int height, WallpaperHelper.DesktopWallpaperStyle style)
     {
         switch (style)
@@ -56,7 +56,7 @@ public class TransitionForm : Form
                     float imgRatio = (float)img.Width / img.Height;
                     float screenRatio = (float)width / height;
                     int drawWidth, drawHeight, x, y;
-                    if (imgRatio > screenRatio) // 图片更宽，高度填满，宽度裁剪
+                    if (imgRatio > screenRatio)
                     {
                         drawHeight = height;
                         drawWidth = (int)(height * imgRatio);
@@ -75,7 +75,7 @@ public class TransitionForm : Form
                 break;
             case WallpaperHelper.DesktopWallpaperStyle.Tile:
                 {
-                    using var tileBrush = new TextureBrush(img, WrapMode.Tile);
+                    using var tileBrush = new TextureBrush(img, System.Drawing.Drawing2D.WrapMode.Tile);
                     g.FillRectangle(tileBrush, 0, 0, width, height);
                 }
                 break;
