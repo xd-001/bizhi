@@ -6,6 +6,7 @@ public partial class SettingsForm : Form
 {
     private AppSettings _settings;
     private TextBox txtFolder = new();
+    private ComboBox cmbIntervalPreset = new();
     private TrackBar tbInterval = new();
     private Label lblIntervalVal = new();
     private CheckBox chkStartup = new();
@@ -30,7 +31,7 @@ public partial class SettingsForm : Form
         _settings = settings;
         Text = "壁纸切换器设置";
         Width = 550;
-        Height = 700;
+        Height = 720;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -48,13 +49,16 @@ public partial class SettingsForm : Form
         btnBrowseMain.Click += (s, e) => { using var fbd = new FolderBrowserDialog(); if (fbd.ShowDialog() == DialogResult.OK) txtFolder.Text = fbd.SelectedPath; };
         y += 35;
 
-        // 切换间隔
+        // 切换间隔预设 + 自定义滑动条
         Controls.Add(new Label { Text = "切换间隔:", Left = 20, Top = y, Width = 80 });
-        tbInterval.Bounds = new Rectangle(100, y - 2, 220, 45);
-        tbInterval.Minimum = 15; tbInterval.Maximum = 86400; tbInterval.TickFrequency = 1800;
-        tbInterval.SmallChange = 300; tbInterval.LargeChange = 3600;
+        cmbIntervalPreset = new ComboBox { Left = 100, Top = y - 2, Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
+        cmbIntervalPreset.Items.AddRange(new object[] { "15 秒", "30 秒", "1 分钟", "5 分钟", "10 分钟", "30 分钟", "1 小时", "自定义" });
+        cmbIntervalPreset.SelectedIndexChanged += CmbIntervalPreset_Changed;
+        y += 30;
+
+        tbInterval = new TrackBar { Left = 100, Top = y, Width = 200, Minimum = 15, Maximum = 86400, TickFrequency = 1800, SmallChange = 300, LargeChange = 3600 };
         tbInterval.ValueChanged += (s, e) => lblIntervalVal.Text = tbInterval.Value + " 秒";
-        lblIntervalVal = new Label { Text = "600 秒", Left = 330, Top = y + 5, Width = 100 };
+        lblIntervalVal = new Label { Text = "600 秒", Left = 310, Top = y + 3, Width = 100 };
         y += 50;
 
         // 开机启动
@@ -83,18 +87,16 @@ public partial class SettingsForm : Form
 
         // 壁纸样式
         Controls.Add(new Label { Text = "壁纸样式:", Left = 20, Top = y, Width = 80 });
-        cmbStyle.Bounds = new Rectangle(100, y - 2, 120, 20);
-        cmbStyle.DropDownStyle = ComboBoxStyle.DropDownList;
+        cmbStyle = new ComboBox { Left = 100, Top = y - 2, Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
         cmbStyle.Items.AddRange(new[] { "拉伸", "填充", "平铺", "居中", "适应" });
         y += 35;
 
         // 平滑过渡
         chkSmooth = new CheckBox { Text = "启用平滑过渡", Left = 20, Top = y, Width = 150 }; y += 25;
         Controls.Add(new Label { Text = "过渡速度:", Left = 40, Top = y, Width = 80 });
-        tbSpeed.Bounds = new Rectangle(120, y - 2, 150, 45);
-        tbSpeed.Minimum = 1; tbSpeed.Maximum = 10; tbSpeed.TickFrequency = 1;
+        tbSpeed = new TrackBar { Left = 120, Top = y - 2, Width = 150, Minimum = 1, Maximum = 10, TickFrequency = 1 };
         tbSpeed.ValueChanged += (s, e) => lblSpeedVal.Text = tbSpeed.Value.ToString();
-        lblSpeedVal = new Label { Text = "5", Left = 280, Top = y + 5, Width = 30 };
+        lblSpeedVal = new Label { Text = "5", Left = 280, Top = y + 3, Width = 30 };
         y += 45;
 
         // 快捷键
@@ -125,13 +127,13 @@ public partial class SettingsForm : Form
         btnBrowseGuest.Click += (s, e) => { using var fbd = new FolderBrowserDialog(); if (fbd.ShowDialog() == DialogResult.OK) txtGuestFolder.Text = fbd.SelectedPath; };
         y += 40;
 
-        // 保存
+        // 保存按钮
         btnSave = new Button { Text = "保存", Left = 220, Top = y + 10, Width = 80 };
         btnSave.Click += BtnSave_Click;
 
-        // 统一添加控件
         Controls.Add(txtFolder);
         Controls.Add(btnBrowseMain);
+        Controls.Add(cmbIntervalPreset);
         Controls.Add(tbInterval);
         Controls.Add(lblIntervalVal);
         Controls.Add(chkStartup);
@@ -153,11 +155,42 @@ public partial class SettingsForm : Form
         Controls.Add(btnSave);
     }
 
+    private void CmbIntervalPreset_Changed(object? sender, EventArgs e)
+    {
+        string? selected = cmbIntervalPreset.SelectedItem?.ToString();
+        if (selected == null) return;
+
+        if (selected == "自定义")
+        {
+            tbInterval.Enabled = true;
+            tbInterval.Visible = true;
+            lblIntervalVal.Visible = true;
+        }
+        else
+        {
+            // 根据预设设置滑动条值并禁用
+            tbInterval.Enabled = false;
+            tbInterval.Visible = false;
+            lblIntervalVal.Visible = false;
+            int seconds = selected switch
+            {
+                "15 秒" => 15,
+                "30 秒" => 30,
+                "1 分钟" => 60,
+                "5 分钟" => 300,
+                "10 分钟" => 600,
+                "30 分钟" => 1800,
+                "1 小时" => 3600,
+                _ => tbInterval.Value
+            };
+            tbInterval.Value = seconds;
+            lblIntervalVal.Text = seconds + " 秒";
+        }
+    }
+
     private void LoadSettings()
     {
         txtFolder.Text = _settings.WallpaperFolder;
-        int interval = Math.Clamp(_settings.IntervalSeconds, 15, 86400);
-        tbInterval.Value = interval; lblIntervalVal.Text = interval + " 秒";
         chkStartup.Checked = _settings.StartWithWindows;
         txtGameProcesses.Text = string.Join(",", _settings.GameProcessNames);
         chkSameWallpaper.Checked = _settings.MultiMonitorSameWallpaper;
@@ -172,12 +205,31 @@ public partial class SettingsForm : Form
         chkPerMonitor.Checked = _settings.PerMonitorPause;
         chkGuestMode.Checked = _settings.GuestMode;
         txtGuestFolder.Text = _settings.GuestFolder;
+
+        // 恢复间隔预设
+        int interval = _settings.IntervalSeconds;
+        string preset;
+        if (interval == 15) preset = "15 秒";
+        else if (interval == 30) preset = "30 秒";
+        else if (interval == 60) preset = "1 分钟";
+        else if (interval == 300) preset = "5 分钟";
+        else if (interval == 600) preset = "10 分钟";
+        else if (interval == 1800) preset = "30 分钟";
+        else if (interval == 3600) preset = "1 小时";
+        else preset = "自定义";
+
+        cmbIntervalPreset.SelectedItem = preset;
+        // 手动触发一次改变事件来设置滑动条状态
+        CmbIntervalPreset_Changed(null, EventArgs.Empty);
+        if (preset != "自定义")
+        {
+            tbInterval.Value = interval; // 确保值正确
+        }
     }
 
     private void BtnSave_Click(object? sender, EventArgs e)
     {
         _settings.WallpaperFolder = txtFolder.Text;
-        _settings.IntervalSeconds = tbInterval.Value;
         _settings.StartWithWindows = chkStartup.Checked;
         _settings.GameProcessNames = txtGameProcesses.Text.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
         _settings.MultiMonitorSameWallpaper = chkSameWallpaper.Checked;
@@ -192,6 +244,27 @@ public partial class SettingsForm : Form
         _settings.PerMonitorPause = chkPerMonitor.Checked;
         _settings.GuestMode = chkGuestMode.Checked;
         _settings.GuestFolder = txtGuestFolder.Text;
+
+        // 间隔保存
+        string? preset = cmbIntervalPreset.SelectedItem?.ToString();
+        if (preset == "自定义")
+        {
+            _settings.IntervalSeconds = tbInterval.Value;
+        }
+        else
+        {
+            _settings.IntervalSeconds = preset switch
+            {
+                "15 秒" => 15,
+                "30 秒" => 30,
+                "1 分钟" => 60,
+                "5 分钟" => 300,
+                "10 分钟" => 600,
+                "30 分钟" => 1800,
+                "1 小时" => 3600,
+                _ => tbInterval.Value
+            };
+        }
         _settings.Save();
 
         RegistryKey? rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
