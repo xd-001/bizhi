@@ -25,6 +25,7 @@ public class MainContext : ApplicationContext
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
+        // 托盘图标（嵌入资源）
         Icon? appIcon = null;
         try
         {
@@ -110,28 +111,21 @@ public class MainContext : ApplicationContext
 
     private void ShowLikeDislikeButtons()
     {
-        if (Screen.AllScreens.Length == 0) return;
+        // 清除旧的
+        foreach (var f in likeDislikeForms) { try { f.Close(); f.Dispose(); } catch { } }
+        likeDislikeForms.Clear();
 
         foreach (var screen in Screen.AllScreens)
         {
-            if (screen == null) continue;
-            try
-            {
-                var form = new LikeDislikeForm();
-                form.LikeClicked += MarkAsLike;
-                form.NextClicked += () => ChangeWallpaper();
-                form.DislikeClicked += MarkAsDislike;
-
-                var area = screen.WorkingArea;
-                int x = area.Right - form.Width - 10;
-                int y = area.Bottom - form.Height - 10;
-                x = Math.Max(area.Left, x);
-                y = Math.Max(area.Top, y);
-                form.Location = new Point(x, y);
-                form.Show();
-                likeDislikeForms.Add(form);
-            }
-            catch { }
+            var form = new LikeDislikeForm();
+            form.LikeClicked += MarkAsLike;
+            form.NextClicked += () => ChangeWallpaper();
+            form.DislikeClicked += MarkAsDislike;
+            form.Show();
+            // 定位到右下角
+            var area = screen.WorkingArea;
+            form.Location = new Point(area.Right - form.Width - 10, area.Bottom - form.Height - 10);
+            likeDislikeForms.Add(form);
         }
     }
 
@@ -153,9 +147,9 @@ public class MainContext : ApplicationContext
         else
         {
             if (string.IsNullOrWhiteSpace(activeFolder))
-                MessageBox.Show("尚未设置壁纸文件夹，请右键托盘图标进入“设置”选择文件夹。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("尚未设置壁纸文件夹，请右键托盘图标进入“设置”选择文件夹。", "提示");
             else
-                MessageBox.Show($"壁纸文件夹不存在：{activeFolder}\n请进入设置重新选择。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show($"壁纸文件夹不存在：{activeFolder}", "错误");
         }
         StartTimers();
     }
@@ -174,8 +168,7 @@ public class MainContext : ApplicationContext
             bool wasGameMode = isGameMode;
             isGameMode = GameDetector.IsFullScreenAppRunning() ||
                          (settings.GameProcessNames != null && GameDetector.IsProcessRunning(settings.GameProcessNames));
-            if (wasGameMode && !isGameMode)
-                ChangeWallpaperIfAllowed();
+            if (wasGameMode && !isGameMode) ChangeWallpaperIfAllowed();
         }, null, 0, 1500);
     }
 
@@ -185,116 +178,88 @@ public class MainContext : ApplicationContext
         ChangeWallpaper();
     }
 
+    /// <summary>
+    /// 核心更换壁纸逻辑，支持多屏独立和淡入淡出动画
+    /// </summary>
     private void ChangeWallpaper(bool useTransition = true)
     {
-        // 暂时完全禁用过渡，避免黑屏/未响应
-        useTransition = false;
-
+        // 访客模式下不移动文件
         if (!settings.GuestMode)
             manager.MoveCurrentToDefaultIfNotMoved();
 
+        // 获取所有屏幕及其对应的监视器ID
         int screenCount = Screen.AllScreens.Length;
         string[] monitorIds = WallpaperHelper.GetMonitorIds();
         int monitorCount = monitorIds.Length;
-        if (monitorCount == 0) monitorCount = screenCount;
+        if (monitorCount == 0) monitorCount = screenCount; // 无法获取ID时用Screen数量
 
-        List<int> activeScreens = new();
-        for (int i = 0; i < monitorCount; i++)
-        {
-            if (settings.PerMonitorPause && i < screenCount && IsScreenOccupied(i))
-                continue;
-            activeScreens.Add(i);
-        }
-        if (activeScreens.Count == 0) return;
-
+        // 确定每个屏幕的图片
         string[] images;
         if (settings.MultiMonitorSameWallpaper)
         {
+            // 所有屏幕同一张壁纸
             var img = manager.GetRandomImage();
-            images = img != null ? new[] { img } : Array.Empty<string>();
+            if (img == null) return;
+            images = Enumerable.Repeat(img, monitorCount).ToArray();
         }
         else
         {
-            images = manager.GetRandomImages(activeScreens.Count);
-            if (images.Length > 0 && images.Length < activeScreens.Count)
-            {
-                var padded = new string[activeScreens.Count];
-                for (int idx = 0; idx < activeScreens.Count; idx++)
-                    padded[idx] = images[idx % images.Length];
-                images = padded;
-            }
+            // 每个屏幕独立随机，确保不同
+            images = manager.GetRandomImages(monitorCount);
+            // 如果图片不够，用最后一张填充
+            while (images.Length < monitorCount)
+                images = images.Append(images[images.Length - 1]).ToArray();
         }
-        if (images.Length == 0) return;
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
-        // 异步执行壁纸设置，避免阻塞 UI
-        Task.Run(() =>
+        if (useTransition && settings.SmoothTransition)
         {
-            try
+            // 异步显示过渡动画，动画结束后设置真实壁纸
+            Task.Run(() =>
             {
-                if (monitorIds.Length == 0)
+                try
                 {
-                    // 无法获取ID，直接整体设置，但保证多屏不同图：images 长度 = 活跃屏幕数，可能小于总屏幕数
-                    // 这里做个降级：为所有屏幕设置 images 循环填充
-                    string[] fullImages = new string[screenCount];
-                    for (int i = 0; i < screenCount; i++)
-                    {
-                        if (activeScreens.Contains(i))
-                        {
-                            int idx = activeScreens.IndexOf(i);
-                            fullImages[i] = idx < images.Length ? images[idx] : images[0];
-                        }
-                        else
-                        {
-                            // 保持当前壁纸？由于 SetWallpapers 会覆盖所有屏幕，这里需要传入全部屏幕的图片。
-                            // 但我们没有旧壁纸路径。简单处理：为未活跃屏幕也传入第一张活跃图（不够完美）。
-                            fullImages[i] = images[0];
-                        }
-                    }
-                    WallpaperHelper.SetWallpapers(fullImages, style);
+                    var transition = new TransitionForm(images, settings.TransitionSpeed);
+                    // 等待过渡窗口关闭（通过事件）
+                    var mre = new ManualResetEventSlim(false);
+                    transition.TransitionCompleted += () => mre.Set();
+                    transition.ShowDialog();
+                    mre.Wait();
                 }
-                else
+                catch { }
+                finally
                 {
-                    // 逐个设置活跃屏幕
-                    for (int i = 0; i < activeScreens.Count; i++)
-                    {
-                        int idx = activeScreens[i];
-                        if (idx < monitorIds.Length && i < images.Length)
-                            WallpaperHelper.SetWallpaperForMonitor(monitorIds[idx], images[i], style);
-                    }
+                    // 设置最终壁纸
+                    SetWallpapersForScreens(monitorIds, images, style);
+                    manager.SetCurrentWallpapers(images);
                 }
-                manager.SetCurrentWallpapers(images);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"壁纸设置失败：{ex.Message}");
-            }
-        });
+            });
+        }
+        else
+        {
+            SetWallpapersForScreens(monitorIds, images, style);
+            manager.SetCurrentWallpapers(images);
+        }
     }
 
-    private bool IsScreenOccupied(int screenIndex)
+    /// <summary>
+    /// 根据监视器ID数组设置壁纸，如果ID为空则使用整体设置
+    /// </summary>
+    private void SetWallpapersForScreens(string[] monitorIds, string[] images, WallpaperHelper.DesktopWallpaperStyle style)
     {
-        IntPtr fg = GetForegroundWindow();
-        if (fg == IntPtr.Zero) return false;
-        if (screenIndex >= Screen.AllScreens.Length) return false;
-        var screen = Screen.AllScreens[screenIndex];
-        GetWindowRect(fg, out RECT rect);
-        var windowScreen = Screen.FromHandle(fg);
-        if (windowScreen.DeviceName != screen.DeviceName) return false;
-        return IsFullScreen(rect, screen);
-    }
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")]
-    private static extern int GetWindowRect(IntPtr hwnd, out RECT rect);
-    private struct RECT { public int Left, Top, Right, Bottom; }
-    private bool IsFullScreen(RECT rect, Screen screen)
-    {
-        var bounds = screen.Bounds;
-        return rect.Left <= bounds.Left && rect.Top <= bounds.Top &&
-               rect.Right >= bounds.Right && rect.Bottom >= bounds.Bottom;
+        if (monitorIds.Length == 0)
+        {
+            WallpaperHelper.SetWallpapers(images, style);
+        }
+        else
+        {
+            for (int i = 0; i < monitorIds.Length; i++)
+            {
+                if (i < images.Length)
+                    WallpaperHelper.SetWallpaperForMonitor(monitorIds[i], images[i], style);
+            }
+        }
     }
 
     private void MarkAsLike()
@@ -355,7 +320,7 @@ public class MainContext : ApplicationContext
 • 托盘图标右键菜单可快速操作。
 • 桌面右下角按钮：❤️喜欢、➡️下一张、❌不喜欢（可拖拽调整大小）。
 • 快捷键（默认 Ctrl+Shift+W）可在设置中自定义，立即切换壁纸。
-• 设置中可调整切换间隔、壁纸样式、过渡效果（暂时禁用）。
+• 设置中可调整切换间隔、壁纸样式、过渡效果。
 • 访客模式：启用后使用独立文件夹，不移动原图库。
 • 游戏检测：支持全屏或指定进程名暂停切换。
 • 每屏幕独立暂停：开启后，仅桌面空闲屏幕更换壁纸。
@@ -369,9 +334,8 @@ public class MainContext : ApplicationContext
     private void SetWindowsStartup(bool enable)
     {
         RegistryKey? rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-        string appName = "WallpaperChanger";
-        if (enable) rk?.SetValue(appName, Application.ExecutablePath);
-        else rk?.DeleteValue(appName, false);
+        if (enable) rk?.SetValue("WallpaperChanger", Application.ExecutablePath);
+        else rk?.DeleteValue("WallpaperChanger", false);
     }
 
     private void ExitApplication()
