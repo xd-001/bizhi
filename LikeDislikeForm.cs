@@ -7,9 +7,9 @@ public partial class LikeDislikeForm : Form
     public event Action? DislikeClicked;
 
     private Button? btnLike, btnNext, btnDislike;
-    private Size _minSize = new Size(120, 40);
+    private readonly Size _minSize = new Size(180, 60);
     private Point _dragOffset;
-    private bool _isDragging = false;
+    private bool _isDragging;
 
     public LikeDislikeForm()
     {
@@ -17,34 +17,30 @@ public partial class LikeDislikeForm : Form
         ShowInTaskbar = false;
         TopMost = false;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.Black;
-        TransparencyKey = Color.Black;
-        AllowTransparency = true;
+        BackColor = Color.FromArgb(30, 30, 30);        // 深色背景
+        TransparencyKey = Color.Empty;                  // 不透明，去掉透明键
+        AllowTransparency = false;
         MinimumSize = _minSize;
-        // 注意：先创建按钮，再设置 Size，避免过早触发 ArrangeButtons
 
-        btnLike = CreateButton("❤️", Color.Red);
+        btnLike = CreateButton("❤️ 喜欢", Color.FromArgb(255, 80, 80));
         btnLike.Click += (s, e) => LikeClicked?.Invoke();
 
-        btnNext = CreateButton("➡️", Color.White);
+        btnNext = CreateButton("➡️ 下一张", Color.White);
         btnNext.Click += (s, e) => NextClicked?.Invoke();
 
-        btnDislike = CreateButton("❌", Color.Gray);
+        btnDislike = CreateButton("❌ 不喜欢", Color.FromArgb(180, 180, 180));
         btnDislike.Click += (s, e) => DislikeClicked?.Invoke();
 
         Controls.Add(btnLike);
         Controls.Add(btnNext);
         Controls.Add(btnDislike);
 
-        // 现在安全设置窗口大小
         Size = _minSize;
-
         ArrangeButtons();
 
         MouseDown += Form_MouseDown;
         MouseMove += Form_MouseMove;
         MouseUp += Form_MouseUp;
-
         SetStyle(ControlStyles.ResizeRedraw, true);
     }
 
@@ -55,13 +51,15 @@ public partial class LikeDislikeForm : Form
             Text = text,
             FlatStyle = FlatStyle.Flat,
             ForeColor = foreColor,
-            Font = new Font("Segoe UI", 12, FontStyle.Regular),
-            BackColor = Color.Transparent,
-            Margin = new Padding(0),
-            Padding = new Padding(0)
+            Font = new Font("Microsoft YaHei", 12, FontStyle.Bold),
+            BackColor = Color.FromArgb(45, 45, 48),
+            Margin = new Padding(2),
+            Padding = new Padding(2),
+            TextAlign = ContentAlignment.MiddleCenter
         };
-        btn.FlatAppearance.BorderSize = 0;
-        btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(60, 255, 255, 255);
+        btn.FlatAppearance.BorderSize = 1;
+        btn.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 80);
+        btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(70, 70, 75);
         return btn;
     }
 
@@ -107,44 +105,30 @@ public partial class LikeDislikeForm : Form
 
     private void Form_MouseUp(object? sender, MouseEventArgs e)
     {
-        if (e.Button == MouseButtons.Left)
-            _isDragging = false;
+        if (e.Button == MouseButtons.Left) _isDragging = false;
     }
 
     protected override void WndProc(ref Message m)
     {
         const int WM_NCHITTEST = 0x84;
-        const int HTLEFT = 10;
-        const int HTRIGHT = 11;
-        const int HTTOP = 12;
-        const int HTTOPLEFT = 13;
-        const int HTTOPRIGHT = 14;
-        const int HTBOTTOM = 15;
-        const int HTBOTTOMLEFT = 16;
-        const int HTBOTTOMRIGHT = 17;
-        const int HTCLIENT = 1;
+        const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14,
+            HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17, HTCLIENT = 1;
 
         base.WndProc(ref m);
-
         if (m.Msg == WM_NCHITTEST)
         {
             Point pt = PointToClient(new Point(m.LParam.ToInt32() & 0xffff, (m.LParam.ToInt32() >> 16) & 0xffff));
-            Size clientSize = ClientSize;
-            int borderWidth = 5;
-
-            bool left = pt.X <= borderWidth;
-            bool right = pt.X >= clientSize.Width - borderWidth;
-            bool top = pt.Y <= borderWidth;
-            bool bottom = pt.Y >= clientSize.Height - borderWidth;
-
-            if (top && left) m.Result = (IntPtr)HTTOPLEFT;
-            else if (top && right) m.Result = (IntPtr)HTTOPRIGHT;
-            else if (bottom && left) m.Result = (IntPtr)HTBOTTOMLEFT;
-            else if (bottom && right) m.Result = (IntPtr)HTBOTTOMRIGHT;
-            else if (top) m.Result = (IntPtr)HTTOP;
-            else if (bottom) m.Result = (IntPtr)HTBOTTOM;
-            else if (left) m.Result = (IntPtr)HTLEFT;
-            else if (right) m.Result = (IntPtr)HTRIGHT;
+            Size sz = ClientSize;
+            int bw = 5;
+            bool l = pt.X <= bw, r = pt.X >= sz.Width - bw, t = pt.Y <= bw, b = pt.Y >= sz.Height - bw;
+            if (t && l) m.Result = (IntPtr)HTTOPLEFT;
+            else if (t && r) m.Result = (IntPtr)HTTOPRIGHT;
+            else if (b && l) m.Result = (IntPtr)HTBOTTOMLEFT;
+            else if (b && r) m.Result = (IntPtr)HTBOTTOMRIGHT;
+            else if (t) m.Result = (IntPtr)HTTOP;
+            else if (b) m.Result = (IntPtr)HTBOTTOM;
+            else if (l) m.Result = (IntPtr)HTLEFT;
+            else if (r) m.Result = (IntPtr)HTRIGHT;
             else m.Result = (IntPtr)HTCLIENT;
         }
     }
