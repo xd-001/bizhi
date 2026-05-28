@@ -43,6 +43,14 @@ public class MainContext : ApplicationContext
 
         RegisterHotKey();
         InitializeWallpaper();
+
+        // 首次运行弹窗
+        if (settings.FirstRun)
+        {
+            ShowHelp();
+            settings.FirstRun = false;
+            settings.Save();
+        }
     }
 
     private void BuildContextMenu()
@@ -92,7 +100,6 @@ public class MainContext : ApplicationContext
     private void RegisterHotKey()
     {
         hotKeyManager?.Dispose();
-        // 修正：将 ChangeWallpaper 包装为无参 Action
         hotKeyManager = new HotKeyManager(9001, settings.GetHotKeyModifiers(), settings.HotKeyKey, () => ChangeWallpaper());
     }
 
