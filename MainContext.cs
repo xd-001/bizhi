@@ -19,14 +19,24 @@ public class MainContext : ApplicationContext
     private ToolStripMenuItem? startupMenuItem;
     private ToolStripMenuItem? guestModeMenuItem;
 
+    // 防止重复打开设置窗口
+    private bool _isSettingsOpen = false;
+
     public MainContext()
     {
         settings = AppSettings.Load() ?? new AppSettings();
         manager = new WallpaperManager();
 
+        // 加载托盘图标：从嵌入资源读取 app.ico
         Icon? appIcon = null;
-        try { if (File.Exists("app.ico")) appIcon = new Icon("app.ico"); } catch { }
-        appIcon ??= SystemIcons.Application;
+        try
+        {
+            using var stream = typeof(MainContext).Assembly.GetManifestResourceStream("WallpaperChanger.app.ico");
+            if (stream != null)
+                appIcon = new Icon(stream);
+        }
+        catch { }
+        appIcon ??= SystemIcons.Application; // 兜底
 
         trayIcon = new NotifyIcon()
         {
@@ -137,6 +147,14 @@ public class MainContext : ApplicationContext
             manager.LoadFolder(activeFolder);
             ChangeWallpaper(useTransition: false);
         }
+        else
+        {
+            // 文件夹无效，提示用户设置
+            if (string.IsNullOrWhiteSpace(activeFolder))
+                MessageBox.Show("尚未设置壁纸文件夹，请右键托盘图标进入“设置”选择文件夹。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            else
+                MessageBox.Show($"壁纸文件夹不存在：{activeFolder}\n请进入设置重新选择。", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
         StartTimers();
     }
 
@@ -181,7 +199,11 @@ public class MainContext : ApplicationContext
                 continue;
             activeScreens.Add(i);
         }
-        if (activeScreens.Count == 0) return;
+        if (activeScreens.Count == 0)
+        {
+            // 所有屏幕都被占用，不切换
+            return;
+        }
 
         string[] images;
         if (settings.MultiMonitorSameWallpaper)
@@ -200,7 +222,12 @@ public class MainContext : ApplicationContext
                 images = padded;
             }
         }
-        if (images.Length == 0) return;
+
+        if (images.Length == 0)
+        {
+            // 没有可用的图片（文件夹空或未加载）
+            return;
+        }
 
         var style = (WallpaperHelper.DesktopWallpaperStyle)settings.WallpaperStyle;
 
@@ -289,6 +316,9 @@ public class MainContext : ApplicationContext
 
     private void OpenSettings()
     {
+        // 防止重复打开设置窗口
+        if (_isSettingsOpen) return;
+        _isSettingsOpen = true;
         try
         {
             var form = new SettingsForm(settings);
@@ -304,6 +334,10 @@ public class MainContext : ApplicationContext
             }
         }
         catch (Exception ex) { MessageBox.Show($"打开设置失败：{ex.Message}", "错误"); }
+        finally
+        {
+            _isSettingsOpen = false;
+        }
     }
 
     private void OpenGallery()
